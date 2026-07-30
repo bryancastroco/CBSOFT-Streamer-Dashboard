@@ -479,3 +479,92 @@ dynamically rendered for the nonce to be applied — check the build output for 
 It needs `.next/static`, which `npm run build` produces. The suite skips those
 assertions when the directory is absent; if it fails rather than skips, a real
 secret was found — read the failure, it names the file.
+
+---
+
+## Deploying to Vercel
+
+Prepared in Phase 11. The repository is committed on `main` with no remote yet.
+
+### 1. Create the GitHub repository
+
+Nothing here invents a URL — substitute your own account or organisation.
+
+```bash
+git remote add origin https://github.com/<your-account>/cbsoft-streamer-dashboard.git
+git push -u origin main
+```
+
+If you use the GitHub CLI:
+
+```bash
+gh repo create cbsoft-streamer-dashboard --private --source=. --remote=origin --push
+```
+
+### 2. Create the Vercel project
+
+Preferred: **Vercel dashboard → Add New → Project → Import Git Repository**, then
+confirm the settings in the table below. Vercel detects all of them from the
+repository; the point of the table is that you can check rather than trust.
+
+| Setting | Value |
+|---|---|
+| Project name | `cbsoft-streamer-dashboard` |
+| Framework preset | Next.js |
+| Root directory | `./` |
+| Package manager | npm (from `package-lock.json`; also pinned in `packageManager`) |
+| Install command | `npm ci` |
+| Build command | `npm run build` |
+| Output directory | *(leave empty — Next.js manages it)* |
+| Production branch | `main` |
+| Node version | 20.x or later (`engines.node >= 20.9.0`) |
+
+Or with the CLI:
+
+```bash
+npm i -g vercel
+vercel login
+vercel link --project cbsoft-streamer-dashboard
+```
+
+`vercel link` writes `.vercel/`, which is git-ignored and must stay that way.
+
+### 3. Set the environment variables
+
+All ten required variables, for **Production** and **Preview** separately. The
+list and how to generate each one is in [`.env.example`](../.env.example).
+
+Do this *before* the first deployment. The build itself needs no secrets — it is
+verified to compile with no environment at all — but every page and route needs
+them at runtime, and `/api/health` will report `degraded` until they are present.
+
+### 4. Nothing runs migrations or seeds during a build
+
+Deliberate. `npm run build` is only `next build`:
+
+- **No client generation step.** Drizzle generates SQL migration files from the
+  schema at authoring time (`npm run db:generate`), which is a developer action
+  committed to the repository — unlike Prisma, there is no client to generate.
+- **No migration.** Run `npm run db:migrate:deploy` yourself against production,
+  as a deliberate step. A build that migrates would apply schema changes on every
+  preview deployment, against whichever database that preview points at.
+- **No seed.** `db:seed` creates an administrator and is run once, by hand.
+
+### 5. After the first deployment
+
+```bash
+curl https://<your-deployment>/api/health
+```
+
+Expect `status: "ok"` with `database.reachable: true`. `degraded` with
+`configured: false` means an environment variable is missing — add the machine
+bearer to see which:
+
+```bash
+curl -H "Authorization: Bearer $N8N_API_SECRET" https://<your-deployment>/api/health
+```
+
+Then set `baseUrl` in the n8n **Configuration** node to the deployment origin,
+and read the resume-loop note in
+[`N8N-PRODUCTION-WORKFLOW.md`](./N8N-PRODUCTION-WORKFLOW.md) before the roster
+grows past `MAX_STREAMERS_PER_SYNC`.

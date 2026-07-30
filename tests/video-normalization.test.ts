@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CONTENT_TYPES, contentHref, isContentType } from "@/lib/comments/content-ref";
 import { formatInsightValue } from "@/lib/meta/insight-display";
 import { normalizeInsights } from "@/lib/meta/posts";
-import { VIDEO_FIELDS, formatDuration, normalizeVideo, absolutePermalink} from "@/lib/meta/videos";
+import { VIDEO_FIELDS, formatDuration, normalizeVideo, absolutePermalink } from "@/lib/meta/videos";
 
 const BASE = {
   id: "102938475610293_9001",

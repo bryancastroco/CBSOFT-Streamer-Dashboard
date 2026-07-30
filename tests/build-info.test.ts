@@ -12,9 +12,10 @@ import { APP_NAME, APP_VERSION, deploymentEnvironment } from "@/lib/observabilit
  * can drift. This is the test that stops that.
  */
 
-const manifest = JSON.parse(
-  await readFile(path.join(process.cwd(), "package.json"), "utf8"),
-) as { name: string; version: string };
+const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8")) as {
+  name: string;
+  version: string;
+};
 
 describe("build info agrees with package.json", () => {
   it("matches the package name", () => {

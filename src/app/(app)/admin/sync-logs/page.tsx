@@ -150,13 +150,13 @@ export default async function AdminSyncLogsPage() {
 function SyncLogTableRow({ run }: { run: SyncLogRow }) {
   return (
     <TableRow>
-      <TableCell className="whitespace-nowrap font-mono text-xs">
+      <TableCell className="font-mono text-xs whitespace-nowrap">
         {formatDateTime(run.startedAt)}
       </TableCell>
-      <TableCell className="whitespace-nowrap text-sm">
+      <TableCell className="text-sm whitespace-nowrap">
         {SYNC_TYPE_LABELS[run.syncType] ?? run.syncType}
       </TableCell>
-      <TableCell className="whitespace-nowrap text-sm">
+      <TableCell className="text-sm whitespace-nowrap">
         {run.streamerCode ? (
           <Link className="underline underline-offset-4" href={`/streamers/${run.streamerId}`}>
             {run.streamerCode}
@@ -164,7 +164,9 @@ function SyncLogTableRow({ run }: { run: SyncLogRow }) {
         ) : (
           <span className="text-muted-foreground">
             Whole roster
-            {run.childCount > 0 ? ` · ${run.childCount} streamer${run.childCount === 1 ? "" : "s"}` : ""}
+            {run.childCount > 0
+              ? ` · ${run.childCount} streamer${run.childCount === 1 ? "" : "s"}`
+              : ""}
           </span>
         )}
       </TableCell>

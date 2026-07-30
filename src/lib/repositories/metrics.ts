@@ -94,8 +94,7 @@ function postWindow(filters: MetricsFilters): SQL[] {
   if (filters.streamerId) conditions.push(eq(posts.streamerId, filters.streamerId));
   if (filters.from)
     conditions.push(sql`${posts.createdTime} >= ${tsParam(filters.from)}::timestamptz`);
-  if (filters.to)
-    conditions.push(sql`${posts.createdTime} <= ${tsParam(filters.to)}::timestamptz`);
+  if (filters.to) conditions.push(sql`${posts.createdTime} <= ${tsParam(filters.to)}::timestamptz`);
   return conditions;
 }
 

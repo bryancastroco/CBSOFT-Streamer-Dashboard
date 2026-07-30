@@ -32,6 +32,57 @@ seven tabs, and alert when something needs a person.
 
 ---
 
+## ⚠ The workflow needs one change before the roster grows past five
+
+Phase 11 made the sweep **resumable**, because Vercel kills a function at
+`maxDuration` and `after()` work is bounded by the same ceiling. A sweep now
+processes at most `MAX_STREAMERS_PER_SYNC` streamers (default **5**) per
+invocation, leaves the parent run `running` while streamers remain, and reports
+`remaining`.
+
+**What that means for the built workflow.** It polls `sync-runs/{id}` until
+`finished` is true. With one streamer that still works exactly as before — the
+single slice finishes and the run closes. With **six or more** streamers the
+first slice finishes, the run stays `running` because five were processed and one
+is pending, and nothing advances it: the workflow polls twenty times and stops at
+`Stop: Poll Timed Out`. No data is lost and nothing is corrupted, but the exports
+never run.
+
+**The shape to move to** is simpler than the current one, and drops the poll loop
+entirely. Because a slice is bounded, `mode: "wait"` is now safe — the request
+returns in slice time, not roster time:
+
+```
+Every 6 Hours
+  → Configuration → Load Watermark
+  → Sync Slice        POST /api/automation/sync-all
+                      { "mode": "wait", "max_streamers": 3 }
+  → More To Do?       IF  {{ $json.remaining_streamers > 0 }}
+        ├─ true  → Resume Slice  POST /api/automation/sync-all
+        │           { "mode": "wait", "max_streamers": 3,
+        │             "resume_sync_run_id": "{{ $json.sync_run_id }}" }
+        │           → back to More To Do?
+        └─ false → Usable?  IF status != "failed"
+                      ├─ true  → branches A–G → Save Watermark
+                      └─ false → Stop: Sync Failed
+```
+
+Why this is better than polling:
+
+- **No race.** Each call is synchronous and returns before the next begins. In
+  async mode a resume issued while a slice is still running could have two slices
+  choosing pending streamers at the same time.
+- **No timeout guesswork.** The loop advances on a real answer (`remaining`)
+  rather than on elapsed time.
+- **Bounded either way.** Keep `max_streamers` small enough that one slice
+  finishes inside both limits that apply: Vercel's 300s function ceiling and
+  n8n's 180s execution cap. Three streamers at roughly 25s each is comfortable.
+
+Still cap the loop — an `IF` on `$runIndex` guarding against a run that never
+reports zero, for the same reason the poll loop was bounded at twenty.
+
+---
+
 ## 1. Shape
 
 ```

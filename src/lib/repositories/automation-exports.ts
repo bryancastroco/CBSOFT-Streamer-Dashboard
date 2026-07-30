@@ -589,8 +589,10 @@ function summarySource(filters: Filters): SQL {
     }
 
     if (kind === "post") {
-      if (filters.from) conditions.push(sql`posts.created_time >= ${tsParam(filters.from)}::timestamptz`);
-      if (filters.to) conditions.push(sql`posts.created_time <= ${tsParam(filters.to)}::timestamptz`);
+      if (filters.from)
+        conditions.push(sql`posts.created_time >= ${tsParam(filters.from)}::timestamptz`);
+      if (filters.to)
+        conditions.push(sql`posts.created_time <= ${tsParam(filters.to)}::timestamptz`);
 
       return sql`
         select
@@ -624,8 +626,10 @@ function summarySource(filters: Filters): SQL {
       `;
     }
 
-    if (filters.from) conditions.push(sql`videos.created_time >= ${tsParam(filters.from)}::timestamptz`);
-    if (filters.to) conditions.push(sql`videos.created_time <= ${tsParam(filters.to)}::timestamptz`);
+    if (filters.from)
+      conditions.push(sql`videos.created_time >= ${tsParam(filters.from)}::timestamptz`);
+    if (filters.to)
+      conditions.push(sql`videos.created_time <= ${tsParam(filters.to)}::timestamptz`);
 
     return sql`
       select

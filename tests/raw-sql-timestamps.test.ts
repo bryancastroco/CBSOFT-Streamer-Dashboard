@@ -93,14 +93,9 @@ describe("no raw sql fragment binds a Date directly", () => {
      * Matches `${collectedAt}` but not `${collectedAt.toISOString()}` and not
      * `${tsParam(collectedAt)}` — the two forms that are safe.
      */
-    const bare = new RegExp(
-      String.raw`\$\{\s*${identifier.replace(".", "\\.")}\s*\}`,
-      "g",
-    );
+    const bare = new RegExp(String.raw`\$\{\s*${identifier.replace(".", "\\.")}\s*\}`, "g");
 
-    const offenders = sources
-      .filter((file) => bare.test(file.text))
-      .map((file) => file.name);
+    const offenders = sources.filter((file) => bare.test(file.text)).map((file) => file.name);
 
     expect(
       offenders,
