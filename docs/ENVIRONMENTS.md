@@ -207,3 +207,34 @@ summarisation. Set both together when a real key exists.
 known. Until it is, `resolveAppOrigin()` falls back to `VERCEL_URL`. Set it on
 the Production target once the domain is decided, and make the Supabase Site URL
 agree with it.
+
+---
+
+## 6. The Vercel cron schedule is constrained by the plan
+
+`vercel.json` schedules `/api/cron/daily-sync` at `0 3 * * *` — **once a day**, not
+every six hours.
+
+Not a preference. On the Hobby plan Vercel rejects any cron that would fire more
+than daily, and it rejects it at *deployment creation*:
+
+```
+cron_jobs_limits_reached
+Hobby accounts are limited to daily cron jobs.
+This cron expression (0 */6 * * *) would run more than once per day.
+```
+
+This is worth understanding because of how it fails. The rejection happens
+before a deployment record exists, so there is **no failed build to look at** —
+the Vercel dashboard simply shows no deployments, and a push appears to have been
+ignored. It looks exactly like a missing GitHub webhook. It cost most of a
+debugging session to find, and the only thing that surfaced it was triggering a
+deployment through the API and reading the 400.
+
+**This does not reduce the sync cadence.** Architecture rule 3 makes n8n the
+primary scheduler, and n8n runs every six hours. The Vercel cron is a safety net
+for the case where n8n is down. Because `/api/cron/daily-sync` enforces the
+`SYNC_FREQUENCY_HOURS` gap, the daily invocation will usually find a recent run
+and return `200 skipped` — which is the gate working, not a failure.
+
+On Pro, restore `0 */6 * * *` if you want the net to be tighter.
