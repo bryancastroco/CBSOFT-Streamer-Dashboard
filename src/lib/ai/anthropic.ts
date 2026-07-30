@@ -88,8 +88,25 @@ export class AnthropicProvider implements AiProvider {
     const env = getServerEnv();
 
     this.model = options?.model ?? env.ANTHROPIC_MODEL;
+
+    const apiKey = options?.apiKey ?? env.ANTHROPIC_API_KEY;
+
+    /*
+     * `ANTHROPIC_API_KEY` is only required when `AI_SUMMARIZATION_ENABLED` is
+     * true, so it can legitimately be absent — but then nothing should be
+     * constructing this provider. Failing here with a sentence an operator can
+     * act on beats letting the SDK throw about a missing key three frames deep,
+     * or worse, sending an unauthenticated request.
+     */
+    if (!apiKey) {
+      throw new Error(
+        "The Anthropic provider was constructed without a key. " +
+          "Set ANTHROPIC_API_KEY, or leave AI_SUMMARIZATION_ENABLED=false so summarisation is skipped.",
+      );
+    }
+
     this.client = new Anthropic({
-      apiKey: options?.apiKey ?? env.ANTHROPIC_API_KEY,
+      apiKey,
       timeout: REQUEST_TIMEOUT_MS,
       maxRetries: 2,
     });

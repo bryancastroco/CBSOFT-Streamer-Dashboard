@@ -44,7 +44,12 @@ const SERVER_ONLY_ENV_KEYS = [
  * Both are public by design — the anon key is meant to be shipped, and is
  * useless without a row-level-security policy that permits the read.
  */
-const PUBLIC_ENV_KEYS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"] as const;
+const PUBLIC_ENV_KEYS = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "NEXT_PUBLIC_APP_NAME",
+  "NEXT_PUBLIC_APP_URL",
+] as const;
 
 async function collectFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -180,12 +185,19 @@ describe.skipIf(!hasBundle)("the client bundle carries no server secret", () => 
     expect(offenders).toEqual([]);
   });
 
-  it("keeps the public allow-list to exactly two values", () => {
-    // Adding a third `NEXT_PUBLIC_` variable is a decision to publish it, and
-    // should be a deliberate edit here rather than a side effect.
+  it("keeps the public allow-list to exactly these four values", () => {
+    /*
+     * Adding a `NEXT_PUBLIC_` variable is a decision to publish it forever, and
+     * should be a deliberate edit here rather than a side effect of adding a
+     * feature. Two of these are Supabase's, both public by design; the other
+     * two are an application name and a canonical URL, neither of which grants
+     * anything.
+     */
     expect([...PUBLIC_ENV_KEYS]).toEqual([
       "NEXT_PUBLIC_SUPABASE_URL",
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_APP_NAME",
+      "NEXT_PUBLIC_APP_URL",
     ]);
   });
 });

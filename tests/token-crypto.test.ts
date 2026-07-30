@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   TokenCryptoError,
@@ -144,5 +144,109 @@ describe("secureCompare", () => {
   it("rejects strings of differing length without throwing", () => {
     expect(secureCompare("abc", "abcdef")).toBe(false);
     expect(secureCompare("", "x")).toBe(false);
+  });
+});
+
+describe("a different key cannot read the ciphertext", () => {
+  /**
+   * Distinct from the tamper tests above, which corrupt the envelope. Here the
+   * envelope is intact and the key is simply wrong — the case that matters when
+   * a database dump is taken without `TOKEN_ENCRYPTION_KEY`, or when the key is
+   * rotated and old rows have not been re-encrypted yet.
+   *
+   * The crypto module caches the parsed environment, so each key needs a fresh
+   * module registry.
+   */
+  async function withKey(hexKey: string) {
+    vi.resetModules();
+    process.env.TOKEN_ENCRYPTION_KEY = hexKey;
+    return import("@/lib/crypto/tokens");
+  }
+
+  const KEY_A = "a".repeat(64);
+  const KEY_B = "b".repeat(64);
+  const original = process.env.TOKEN_ENCRYPTION_KEY;
+
+  afterEach(() => {
+    process.env.TOKEN_ENCRYPTION_KEY = original;
+    vi.resetModules();
+  });
+
+  it("refuses ciphertext produced under another key", async () => {
+    const a = await withKey(KEY_A);
+    const envelope = a.encryptToken(TOKEN);
+
+    const b = await withKey(KEY_B);
+
+    // `b.TokenCryptoError`, not `a`'s: `resetModules` gives each import its own
+    // module instance, so the two classes are distinct identities even though
+    // they come from the same file.
+    expect(() => b.decryptToken(envelope)).toThrow(b.TokenCryptoError);
+  });
+
+  it("says only that decryption failed, never that the key was wrong", async () => {
+    /*
+     * "Wrong key" and "corrupt data" must be indistinguishable to a caller.
+     * Telling them apart is an oracle: it confirms to an attacker holding a
+     * dump that a guessed key is closer than another.
+     */
+    const a = await withKey(KEY_A);
+    const envelope = a.encryptToken(TOKEN);
+
+    const b = await withKey(KEY_B);
+
+    let message = "";
+    try {
+      b.decryptToken(envelope);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toBe("Failed to decrypt token");
+    expect(message).not.toMatch(/key|tag|auth|unable/i);
+  });
+
+  it("still round-trips under the key that produced it", async () => {
+    const a = await withKey(KEY_A);
+    expect(a.decryptToken(a.encryptToken(TOKEN))).toBe(TOKEN);
+  });
+});
+
+describe("TOKEN_ENCRYPTION_KEY is validated before it is used", () => {
+  async function keyIsAccepted(value: string): Promise<boolean> {
+    vi.resetModules();
+    process.env.TOKEN_ENCRYPTION_KEY = value;
+
+    const { encryptToken } = await import("@/lib/crypto/tokens");
+
+    try {
+      encryptToken("probe");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const original = process.env.TOKEN_ENCRYPTION_KEY;
+
+  afterEach(() => {
+    process.env.TOKEN_ENCRYPTION_KEY = original;
+    vi.resetModules();
+  });
+
+  it("accepts 64 hex characters", async () => {
+    expect(await keyIsAccepted("0".repeat(64))).toBe(true);
+  });
+
+  it("accepts 44-character base64", async () => {
+    expect(await keyIsAccepted(Buffer.alloc(32, 7).toString("base64"))).toBe(true);
+  });
+
+  it("rejects a key that is too short to be 32 bytes", async () => {
+    // The failure mode this prevents is silent: a short key that still parses
+    // would encrypt happily and weaken every token in the database.
+    for (const bad of ["0".repeat(32), "deadbeef", "", "not-a-key"]) {
+      expect(await keyIsAccepted(bad), bad || "(empty)").toBe(false);
+    }
   });
 });

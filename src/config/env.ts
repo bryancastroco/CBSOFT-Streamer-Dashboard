@@ -23,121 +23,173 @@ const encryptionKeySchema = nonEmpty("TOKEN_ENCRYPTION_KEY").refine((value) => {
   return false;
 }, "TOKEN_ENCRYPTION_KEY must be a 32-byte key encoded as 64 hex characters or 44-character base64");
 
-const serverEnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+const serverEnvSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
-  // Supabase
-  NEXT_PUBLIC_SUPABASE_URL: nonEmpty("NEXT_PUBLIC_SUPABASE_URL").pipe(z.url()),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmpty("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-  SUPABASE_SERVICE_ROLE_KEY: nonEmpty("SUPABASE_SERVICE_ROLE_KEY"),
+    // Supabase
+    NEXT_PUBLIC_SUPABASE_URL: nonEmpty("NEXT_PUBLIC_SUPABASE_URL").pipe(z.url()),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmpty("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    SUPABASE_SERVICE_ROLE_KEY: nonEmpty("SUPABASE_SERVICE_ROLE_KEY"),
 
-  // Database (Drizzle / direct Postgres access)
-  DATABASE_URL: nonEmpty("DATABASE_URL").startsWith("postgres"),
+    // ---------------------------------------------------------------------------
+    // Application identity — browser-visible, and deliberately so
+    // ---------------------------------------------------------------------------
 
-  // Meta Graph API — server-side use only
-  META_APP_ID: nonEmpty("META_APP_ID"),
-  META_APP_SECRET: nonEmpty("META_APP_SECRET"),
-  META_GRAPH_API_VERSION: z
-    .string()
-    .regex(/^v\d+\.\d+$/, "META_GRAPH_API_VERSION must look like v25.0")
-    .default("v25.0"),
+    NEXT_PUBLIC_APP_NAME: z.string().min(1).default("CBSOFT Streamer Performance Dashboard"),
 
-  // Page-token encryption at rest
-  TOKEN_ENCRYPTION_KEY: encryptionKeySchema,
+    /**
+     * The canonical production origin, e.g. `https://cbsoft.example.com`.
+     *
+     * Optional, and optional on purpose. A preview deployment has no stable
+     * hostname — Vercel mints a new one per commit — so requiring this would
+     * either fail every preview or force one preview's URL to be baked in as the
+     * canonical one, which is worse than having none. `resolveAppOrigin()` in
+     * `src/lib/config/app-origin.ts` falls back to `VERCEL_URL` for previews and
+     * localhost for development.
+     *
+     * Trailing slash is rejected rather than trimmed: a value that round-trips
+     * differently from what was typed is a bug waiting to be debugged at 2am.
+     */
+    NEXT_PUBLIC_APP_URL: z
+      .string()
+      .pipe(z.url())
+      .refine((value) => !value.endsWith("/"), "NEXT_PUBLIC_APP_URL must not end with a slash")
+      .optional(),
 
-  // AI — comment summarisation
-  ANTHROPIC_API_KEY: nonEmpty("ANTHROPIC_API_KEY"),
-  AI_PROVIDER: z.enum(["anthropic"]).default("anthropic"),
-  /**
-   * Overridable so a model can be changed without a deploy. Defaults to the
-   * current Opus — summarising a few hundred comments into themes is a
-   * judgement task, not an extraction one.
-   */
-  ANTHROPIC_MODEL: z.string().min(1).default("claude-opus-5"),
+    // Database (Drizzle / direct Postgres access)
+    DATABASE_URL: nonEmpty("DATABASE_URL").startsWith("postgres"),
 
-  // -------------------------------------------------------------------------
-  // Synchronisation defaults
-  //
-  // Every one of these is a ceiling on how much a single sweep will do. They
-  // exist because the two scarce resources — Meta's per-app rate limit and
-  // Anthropic tokens — are both spent by this system on a schedule nobody
-  // watches. A sweep with no bounds is one misconfiguration away from
-  // exhausting either.
-  // -------------------------------------------------------------------------
+    // Meta Graph API — server-side use only
+    META_APP_ID: nonEmpty("META_APP_ID"),
+    META_APP_SECRET: nonEmpty("META_APP_SECRET"),
+    META_GRAPH_API_VERSION: z
+      .string()
+      .regex(/^v\d+\.\d+$/, "META_GRAPH_API_VERSION must look like v25.0")
+      .default("v25.0"),
 
-  /**
-   * How far back a scheduled sweep looks for content.
-   *
-   * A sweep is incremental by intent: last night's run already collected
-   * everything older. The window exists so a run that has been failing for a
-   * few days catches up when it recovers, rather than walking a Page's entire
-   * history every night.
-   */
-  CONTENT_SYNC_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+    // Page-token encryption at rest
+    TOKEN_ENCRYPTION_KEY: encryptionKeySchema,
 
-  /** Posts collected per streamer per sweep. */
-  MAX_POSTS_PER_STREAMER: z.coerce.number().int().min(1).max(1000).default(100),
+    /**
+     * AI — comment summarisation.
+     *
+     * Optional here, and required conditionally below: the key is only needed
+     * when `AI_SUMMARIZATION_ENABLED` is true. Making it unconditionally required
+     * meant a deployment that had deliberately switched AI off still refused to
+     * start without a credential it would never use — so the kill switch could
+     * not actually be used to run without Anthropic, which was its entire point.
+     */
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    AI_PROVIDER: z.enum(["anthropic"]).default("anthropic"),
+    /**
+     * Overridable so a model can be changed without a deploy. Defaults to the
+     * current Opus — summarising a few hundred comments into themes is a
+     * judgement task, not an extraction one.
+     */
+    ANTHROPIC_MODEL: z.string().min(1).default("claude-opus-5"),
 
-  /** Videos collected per streamer per sweep. */
-  MAX_VIDEOS_PER_STREAMER: z.coerce.number().int().min(1).max(1000).default(100),
+    // -------------------------------------------------------------------------
+    // Synchronisation defaults
+    //
+    // Every one of these is a ceiling on how much a single sweep will do. They
+    // exist because the two scarce resources — Meta's per-app rate limit and
+    // Anthropic tokens — are both spent by this system on a schedule nobody
+    // watches. A sweep with no bounds is one misconfiguration away from
+    // exhausting either.
+    // -------------------------------------------------------------------------
 
-  /**
-   * Ceiling on comments fetched per post or video. Meta pages 25–100 at a
-   * time; without a cap a viral post could pull tens of thousands of comments
-   * into one AI request.
-   */
-  MAX_COMMENTS_PER_CONTENT: z.coerce.number().int().min(1).max(5000).default(500),
+    /**
+     * How far back a scheduled sweep looks for content.
+     *
+     * A sweep is incremental by intent: last night's run already collected
+     * everything older. The window exists so a run that has been failing for a
+     * few days catches up when it recovers, rather than walking a Page's entire
+     * history every night.
+     */
+    CONTENT_SYNC_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(365).default(30),
 
-  /**
-   * How often the scheduled sweep is expected to run.
-   *
-   * Not a scheduler — Vercel Cron and n8n own the timing. This is the
-   * application's view of the cadence, used to decide whether a cron
-   * invocation is too soon after the last one, and to tell an operator on the
-   * Settings page when the next run is due.
-   */
-  /**
-   * Streamers one sweep invocation may process before handing back.
-   *
-   * The ceiling that keeps a roster-wide sweep inside a single serverless
-   * function window. Vercel kills a function at `maxDuration`, and work handed
-   * to `after()` is bounded by the same limit — so a roster larger than one
-   * window must be advanced across several invocations rather than attempted in
-   * one. n8n (or the cron route) calls the sweep again with the same run id
-   * until `remaining` reaches zero.
-   *
-   * Raise it only if a slice reliably finishes well inside the function limit.
-   */
-  MAX_STREAMERS_PER_SYNC: z.coerce.number().int().min(1).max(200).default(5),
+    /** Posts collected per streamer per sweep. */
+    MAX_POSTS_PER_STREAMER: z.coerce.number().int().min(1).max(1000).default(100),
 
-  SYNC_FREQUENCY_HOURS: z.coerce.number().int().min(1).max(168).default(6),
+    /** Videos collected per streamer per sweep. */
+    MAX_VIDEOS_PER_STREAMER: z.coerce.number().int().min(1).max(1000).default(100),
 
-  /**
-   * The kill switch for AI spend.
-   *
-   * When false, comments are still collected and stored — that costs only Meta
-   * quota — but no summary is generated and no Anthropic call is made. Set it
-   * false to keep the pipeline running while a billing problem is sorted out,
-   * rather than disabling the whole sweep.
-   */
-  AI_SUMMARIZATION_ENABLED: z
-    .enum(["true", "false"])
-    .default("true")
-    .transform((value) => value === "true"),
+    /**
+     * Ceiling on comments fetched per post or video. Meta pages 25–100 at a
+     * time; without a cap a viral post could pull tens of thousands of comments
+     * into one AI request.
+     */
+    MAX_COMMENTS_PER_CONTENT: z.coerce.number().int().min(1).max(5000).default(500),
 
-  // Machine-to-machine callers
-  CRON_SECRET: nonEmpty("CRON_SECRET").min(32, "CRON_SECRET must be at least 32 characters"),
-  N8N_API_SECRET: nonEmpty("N8N_API_SECRET").min(
-    32,
-    "N8N_API_SECRET must be at least 32 characters",
-  ),
+    /**
+     * How often the scheduled sweep is expected to run.
+     *
+     * Not a scheduler — Vercel Cron and n8n own the timing. This is the
+     * application's view of the cadence, used to decide whether a cron
+     * invocation is too soon after the last one, and to tell an operator on the
+     * Settings page when the next run is due.
+     */
+    /**
+     * Streamers one sweep invocation may process before handing back.
+     *
+     * The ceiling that keeps a roster-wide sweep inside a single serverless
+     * function window. Vercel kills a function at `maxDuration`, and work handed
+     * to `after()` is bounded by the same limit — so a roster larger than one
+     * window must be advanced across several invocations rather than attempted in
+     * one. n8n (or the cron route) calls the sweep again with the same run id
+     * until `remaining` reaches zero.
+     *
+     * Raise it only if a slice reliably finishes well inside the function limit.
+     */
+    MAX_STREAMERS_PER_SYNC: z.coerce.number().int().min(1).max(200).default(5),
 
-  // Feature flags
-  GOOGLE_SHEETS_EXPORT_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
-});
+    SYNC_FREQUENCY_HOURS: z.coerce.number().int().min(1).max(168).default(6),
+
+    /**
+     * The kill switch for AI spend.
+     *
+     * When false, comments are still collected and stored — that costs only Meta
+     * quota — but no summary is generated and no Anthropic call is made. Set it
+     * false to keep the pipeline running while a billing problem is sorted out,
+     * rather than disabling the whole sweep.
+     */
+    AI_SUMMARIZATION_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+
+    // Machine-to-machine callers
+    CRON_SECRET: nonEmpty("CRON_SECRET").min(32, "CRON_SECRET must be at least 32 characters"),
+    N8N_API_SECRET: nonEmpty("N8N_API_SECRET").min(
+      32,
+      "N8N_API_SECRET must be at least 32 characters",
+    ),
+
+    // Feature flags
+    GOOGLE_SHEETS_EXPORT_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+  })
+  .superRefine((env, ctx) => {
+    /*
+     * Cross-field rule, expressible only once both fields are parsed.
+     *
+     * The message names the key and never touches a value — the same rule the
+     * rest of this module follows, and the reason `getServerEnvSafe` can report
+     * what is missing without publishing anything.
+     */
+    if (env.AI_SUMMARIZATION_ENABLED && !env.ANTHROPIC_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ANTHROPIC_API_KEY"],
+        message:
+          "ANTHROPIC_API_KEY is required while AI_SUMMARIZATION_ENABLED is true. " +
+          "Set the key, or set AI_SUMMARIZATION_ENABLED=false to run without AI.",
+      });
+    }
+  });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
