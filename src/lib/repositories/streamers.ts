@@ -783,7 +783,7 @@ export async function requestManualSync(params: {
       .values({
         streamerId: params.id,
         syncType: "manual",
-        status: "pending",
+        status: "queued",
       })
       .returning({ id: syncRuns.id });
 

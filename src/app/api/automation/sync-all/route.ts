@@ -12,7 +12,12 @@ import {
 import { sanitiseThrown } from "@/lib/automation/sanitise";
 import { childLogger } from "@/lib/observability/logger";
 import { getSyncRunStatus } from "@/lib/repositories/automation-exports";
-import { openSyncAllRun, runSyncAll, SYNC_ALL_DEFAULTS } from "@/lib/services/sync-all";
+import {
+  openSyncAllRun,
+  runSyncAll,
+  SweepAlreadyRunningError,
+  SYNC_ALL_DEFAULTS,
+} from "@/lib/services/sync-all";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,9 +162,24 @@ export async function POST(request: Request) {
 
       syncRunId = input.resume_sync_run_id;
     } else {
-      syncRunId = await openSyncAllRun();
+      syncRunId = await openSyncAllRun("n8n");
     }
   } catch (cause) {
+    /*
+     * A sweep already running is not a server fault — it is the concurrency
+     * guard doing its job, and 409 is what tells a workflow to back off rather
+     * than retry into the same wall. 500 would make n8n retry and lose.
+     */
+    if (cause instanceof SweepAlreadyRunningError) {
+      return automationError(
+        409,
+        "sync_already_running",
+        "A synchronisation sweep is already in progress. Poll it instead of starting another.",
+        undefined,
+        guard.headers,
+      );
+    }
+
     log.error("automation.sync_all.open_failed", { error: sanitiseThrown(cause) });
 
     return automationError(

@@ -416,7 +416,7 @@ async function SyncHistoryTab({ streamerId }: { streamerId: string }) {
                       variant={
                         run.status === "failed"
                           ? "destructive"
-                          : run.status === "partial"
+                          : run.status === "completed_with_errors"
                             ? "outline"
                             : "secondary"
                       }

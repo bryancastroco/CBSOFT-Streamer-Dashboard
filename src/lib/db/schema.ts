@@ -89,12 +89,44 @@ export const syncTypeEnum = pgEnum("sync_type", [
  */
 export const exportStatusEnum = pgEnum("export_status", ["succeeded", "failed"]);
 
+/**
+ * The lifecycle of one synchronisation run.
+ *
+ * Order matches the enum's physical order, which Phase 13's in-place renames
+ * preserved — `cancelled` is the only genuinely new value and therefore sorts
+ * last rather than alphabetically.
+ *
+ * `completed_with_errors` is the important one. A sweep where nine Pages of ten
+ * succeeded is not a failure, and reporting it as one trains an operator to
+ * ignore the status field entirely.
+ */
 export const syncStatusEnum = pgEnum("sync_status", [
-  "pending",
-  "running",
-  "succeeded",
+  /** Created, not yet started. */
+  "queued",
+  /** Working. The only non-terminal state a run can sit in for long. */
+  "processing",
+  /** Everything attempted, everything succeeded. */
+  "completed",
+  /** Nothing usable was produced. */
   "failed",
-  "partial",
+  /** Some streamers or items succeeded and some did not. */
+  "completed_with_errors",
+  /** Stopped deliberately. Distinguishes "abandoned" from "still running". */
+  "cancelled",
+]);
+
+/**
+ * Who asked for a run.
+ *
+ * Deliberately separate from `sync_type`, which says what the run *did*. The
+ * first question asked of a misbehaving run is who triggered it, and inferring
+ * that from the type was guesswork.
+ */
+export const triggerSourceEnum = pgEnum("trigger_source", [
+  "admin",
+  "n8n",
+  "vercel_cron",
+  "system_retry",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -245,7 +277,9 @@ export const syncRuns = pgTable(
     }),
 
     syncType: syncTypeEnum("sync_type").notNull(),
-    status: syncStatusEnum("status").notNull().default("pending"),
+    /** Who asked. Nullable: rows predating Phase 13 genuinely do not know. */
+    triggerSource: triggerSourceEnum("trigger_source"),
+    status: syncStatusEnum("status").notNull().default("queued"),
 
     postsProcessed: integer("posts_processed").notNull().default(0),
     videosProcessed: integer("videos_processed").notNull().default(0),

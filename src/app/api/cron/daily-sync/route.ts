@@ -62,7 +62,7 @@ export async function GET(request: Request) {
   const [inFlight] = await db
     .select({ id: syncRuns.id, startedAt: syncRuns.startedAt })
     .from(syncRuns)
-    .where(eq(syncRuns.status, "running"))
+    .where(eq(syncRuns.status, "processing"))
     .orderBy(desc(syncRuns.startedAt))
     .limit(1);
 
@@ -125,7 +125,7 @@ export async function GET(request: Request) {
   let syncRunId: string;
 
   try {
-    syncRunId = await openSyncAllRun();
+    syncRunId = await openSyncAllRun("vercel_cron");
   } catch (cause) {
     log.error("cron.open_failed", { error: sanitiseThrown(cause) });
 
@@ -176,7 +176,7 @@ export async function GET(request: Request) {
       ok: true,
       skipped: false,
       sync_run_id: syncRunId,
-      status: "running",
+      status: "processing",
       poll_url: `/api/automation/sync-runs/${syncRunId}`,
       lookback_days: ceilings.lookbackDays,
       message: "Synchronisation started.",

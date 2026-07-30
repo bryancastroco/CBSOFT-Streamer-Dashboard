@@ -64,6 +64,20 @@
       "when": 1785385705615,
       "tag": "0008_phase9_export_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785385705616,
+      "tag": "0009_phase13_sync_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785385705617,
+      "tag": "0010_phase13_cancelled_terminal",
+      "breakpoints": true
     }
   ]
 }

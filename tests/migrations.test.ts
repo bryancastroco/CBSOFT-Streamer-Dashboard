@@ -140,6 +140,9 @@ describe("migrations apply cleanly", () => {
         // spawned it, so a workflow polling one id learns the state of all.
         "parent_sync_run_id",
         "sync_type",
+        // Phase 13: WHAT the run did (sync_type) and WHO asked for it
+        // (trigger_source) are different questions and now different columns.
+        "trigger_source",
         "status",
         "posts_processed",
         "videos_processed",
@@ -202,7 +205,22 @@ describe("migrations apply cleanly", () => {
       // and inserting a value in the middle would rewrite existing rows.
       "automation",
     ]);
-    expect(byName["sync_status"]).toEqual(["pending", "running", "succeeded", "failed", "partial"]);
+    /*
+     * Phase 13 renamed four of these in place with `ALTER TYPE ... RENAME
+     * VALUE`, so `cancelled` — genuinely new — sorts last rather than
+     * alphabetically. Existing rows kept their identity through the rename
+     * because Postgres stores the enum's OID, not its label.
+     */
+    expect(byName["sync_status"]).toEqual([
+      "queued",
+      "processing",
+      "completed",
+      "failed",
+      "completed_with_errors",
+      "cancelled",
+    ]);
+    // Phase 13. Who asked for the run, as opposed to what the run did.
+    expect(byName["trigger_source"]).toEqual(["admin", "n8n", "vercel_cron", "system_retry"]);
     // Phase 9. Two values only: an export either produced its rows or it did
     // not. A short page is the last page, not a partial failure.
     expect(byName["export_status"]).toEqual(["succeeded", "failed"]);

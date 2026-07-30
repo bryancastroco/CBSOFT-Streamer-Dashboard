@@ -80,17 +80,24 @@ beforeEach(async () => {
   }
 
   const parent = await client.query<{ id: string }>(
-    `insert into sync_runs (streamer_id, sync_type, status) values (null, 'automation', 'running') returning id`,
+    `insert into sync_runs (streamer_id, sync_type, status) values (null, 'automation', 'processing') returning id`,
   );
   parentRunId = parent.rows[0]!.id;
 
+  /*
+   * The second parent is CLOSED, not active. Phase 13 added a partial unique
+   * index permitting only one `queued`/`processing` top-level run at a time, so
+   * two active sweeps can no longer coexist — which is the point of the lock.
+   * A completed run is still a valid parent for the scoping assertion below.
+   */
   const other = await client.query<{ id: string }>(
-    `insert into sync_runs (streamer_id, sync_type, status) values (null, 'automation', 'running') returning id`,
+    `insert into sync_runs (streamer_id, sync_type, status, completed_at)
+     values (null, 'automation', 'completed', now()) returning id`,
   );
   otherRunId = other.rows[0]!.id;
 });
 
-async function attempt(parentId: string, code: string, status = "succeeded") {
+async function attempt(parentId: string, code: string, status = "completed") {
   // `sync_runs_failure_has_message_check` requires a message on a failed run,
   // so a failed attempt has to carry one.
   await client.query(

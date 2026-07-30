@@ -324,7 +324,7 @@ export async function syncPostsAction(
     };
   }
 
-  if (result.status === "partial") {
+  if (result.status === "completed_with_errors") {
     const notes: string[] = [];
     if (result.truncated) notes.push("stopped at the page limit — run again to continue");
     if (result.postsWithInsightErrors > 0) {
@@ -376,7 +376,7 @@ export async function syncVideosAction(
     };
   }
 
-  if (result.status === "partial") {
+  if (result.status === "completed_with_errors") {
     const notes: string[] = [];
     if (result.truncated) notes.push("stopped at the page limit — run again to continue");
     if (result.videosWithInsightErrors > 0) {

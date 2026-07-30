@@ -115,7 +115,7 @@ export type SyncAllOptions = {
 export type StreamerSweepResult = {
   streamer_id: string;
   streamer_code: string;
-  status: "succeeded" | "partial" | "skipped" | "failed";
+  status: "completed" | "completed_with_errors" | "skipped" | "failed";
   token_status: string | null;
   posts_processed: number;
   post_insights_written: number;
@@ -129,7 +129,7 @@ export type StreamerSweepResult = {
 
 export type SyncAllResult = {
   syncRunId: string;
-  status: "succeeded" | "partial" | "failed";
+  status: "completed" | "completed_with_errors" | "failed";
   /**
    * False when streamers are still pending under this run.
    *
@@ -163,16 +163,55 @@ const UNUSABLE_TOKEN_STATUSES = new Set(["missing", "expired", "invalid", "missi
  * the sweep continue in the background — which is what the documented n8n
  * workflow relies on.
  */
-export async function openSyncAllRun(): Promise<string> {
+export type TriggerSource = "admin" | "n8n" | "vercel_cron" | "system_retry";
+
+/** Raised when a sweep is already in flight. Carries no detail worth leaking. */
+export class SweepAlreadyRunningError extends Error {
+  constructor() {
+    super("A synchronisation sweep is already in progress.");
+    this.name = "SweepAlreadyRunningError";
+  }
+}
+
+export async function openSyncAllRun(triggerSource: TriggerSource = "n8n"): Promise<string> {
   const db = getDb();
 
-  const [run] = await db
-    .insert(syncRuns)
-    .values({ streamerId: null, syncType: "automation", status: "running" })
-    .returning({ id: syncRuns.id });
+  try {
+    const [run] = await db
+      .insert(syncRuns)
+      .values({
+        streamerId: null,
+        syncType: "automation",
+        triggerSource,
+        status: "processing",
+      })
+      .returning({ id: syncRuns.id });
 
-  if (!run) throw new Error("Failed to open an automation sync run");
-  return run.id;
+    if (!run) throw new Error("Failed to open an automation sync run");
+    return run.id;
+  } catch (cause) {
+    /*
+     * Overlap is prevented by the database, not by this code.
+     *
+     * `sync_runs_one_active_sweep_idx` is a partial unique index admitting one
+     * top-level run in `queued` or `processing`. The previous guard read for an
+     * in-flight run and then inserted, which is a race: two callers arriving
+     * together both saw nothing and both started a sweep. Here the second
+     * inserter simply loses, and 23505 is the only way to find out.
+     */
+    if (isUniqueViolation(cause)) throw new SweepAlreadyRunningError();
+    throw cause;
+  }
+}
+
+/** Postgres unique-violation SQLSTATE, however the driver wrapped it. */
+function isUniqueViolation(error: unknown): boolean {
+  for (const candidate of [error, (error as { cause?: unknown })?.cause]) {
+    if (candidate && typeof candidate === "object") {
+      if ((candidate as { code?: string }).code === "23505") return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -284,7 +323,7 @@ export async function runSyncAll(params: {
   const failed = results.filter((result) => result.status === "failed").length;
   const skipped = results.filter((result) => result.status === "skipped").length;
   const worked = results.filter(
-    (result) => result.status === "succeeded" || result.status === "partial",
+    (result) => result.status === "completed" || result.status === "completed_with_errors",
   ).length;
 
   // `failed` only when nothing worked at all. A sweep where nine of ten Pages
@@ -292,12 +331,14 @@ export async function runSyncAll(params: {
   // operator to ignore the status.
   const status: SyncAllResult["status"] =
     roster.length === 0
-      ? "succeeded"
+      ? "completed"
       : worked === 0
         ? "failed"
-        : failed > 0 || skipped > 0 || results.some((result) => result.status === "partial")
-          ? "partial"
-          : "succeeded";
+        : failed > 0 ||
+            skipped > 0 ||
+            results.some((result) => result.status === "completed_with_errors")
+          ? "completed_with_errors"
+          : "completed";
 
   const summary = buildSummary({ total: roster.length, worked, failed, skipped });
 
@@ -380,7 +421,7 @@ async function sweepStreamer(
   const result: StreamerSweepResult = {
     streamer_id: streamer.id,
     streamer_code: streamer.streamerCode,
-    status: "succeeded",
+    status: "completed",
     token_status: null,
     posts_processed: 0,
     post_insights_written: 0,
@@ -449,7 +490,7 @@ async function sweepStreamer(
     if (posts.result.error) {
       fail("posts", posts.result.error.message, sanitiseMetaError(posts.result.error));
     }
-    if (posts.result.status !== "succeeded") result.status = "partial";
+    if (posts.result.status !== "completed") result.status = "completed_with_errors";
   }
 
   // ---- 6 & 7. Post comments and changed summaries -------------------------
@@ -466,8 +507,8 @@ async function sweepStreamer(
     result.comments_processed += commentOutcome.comments;
     result.summaries_generated += commentOutcome.summaries;
     for (const error of commentOutcome.errors) fail("post_comments", error);
-    if (commentOutcome.errors.length > 0 && result.status === "succeeded") {
-      result.status = "partial";
+    if (commentOutcome.errors.length > 0 && result.status === "completed") {
+      result.status = "completed_with_errors";
     }
   }
 
@@ -478,7 +519,7 @@ async function sweepStreamer(
     fail("videos", videos.message);
     // Posts may still have worked; only mark the whole streamer failed when
     // neither half produced anything.
-    result.status = result.posts_processed > 0 ? "partial" : "failed";
+    result.status = result.posts_processed > 0 ? "completed_with_errors" : "failed";
   } else {
     result.videos_processed = videos.result.videosProcessed;
     result.video_insights_written = videos.result.insightsWritten;
@@ -486,8 +527,8 @@ async function sweepStreamer(
     if (videos.result.error) {
       fail("videos", videos.result.error.message, sanitiseMetaError(videos.result.error));
     }
-    if (videos.result.status !== "succeeded" && result.status === "succeeded") {
-      result.status = "partial";
+    if (videos.result.status !== "completed" && result.status === "completed") {
+      result.status = "completed_with_errors";
     }
   }
 
@@ -505,8 +546,8 @@ async function sweepStreamer(
     result.comments_processed += commentOutcome.comments;
     result.summaries_generated += commentOutcome.summaries;
     for (const error of commentOutcome.errors) fail("video_comments", error);
-    if (commentOutcome.errors.length > 0 && result.status === "succeeded") {
-      result.status = "partial";
+    if (commentOutcome.errors.length > 0 && result.status === "completed") {
+      result.status = "completed_with_errors";
     }
   }
 
@@ -644,7 +685,7 @@ async function progressRun(
   await db
     .update(syncRuns)
     .set({
-      status: "running",
+      status: "processing",
       errorDetailsJson: details as never,
       ...accumulate(totals),
     })
@@ -653,7 +694,7 @@ async function progressRun(
 
 async function closeRun(
   runId: string,
-  status: "succeeded" | "partial" | "failed",
+  status: "completed" | "completed_with_errors" | "failed",
   message: string | null,
   totals: SliceTotals,
   details: Record<string, unknown>,
@@ -688,7 +729,7 @@ function buildResult(
     remaining,
     streamersTotal: streamers.length,
     streamersSucceeded: streamers.filter(
-      (entry) => entry.status === "succeeded" || entry.status === "partial",
+      (entry) => entry.status === "completed" || entry.status === "completed_with_errors",
     ).length,
     streamersFailed: streamers.filter((entry) => entry.status === "failed").length,
     streamersSkipped: streamers.filter((entry) => entry.status === "skipped").length,

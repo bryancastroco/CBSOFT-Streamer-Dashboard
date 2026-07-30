@@ -108,7 +108,7 @@ function postsOk(overrides: Record<string, unknown> = {}) {
       postsWithInsightErrors: 0,
       pagesFetched: 1,
       truncated: false,
-      status: "succeeded" as const,
+      status: "completed" as const,
       insightErrors: [],
       ...overrides,
     },
@@ -125,7 +125,7 @@ function videosOk(overrides: Record<string, unknown> = {}) {
       videosWithInsightErrors: 0,
       pagesFetched: 1,
       truncated: false,
-      status: "succeeded" as const,
+      status: "completed" as const,
       insightErrors: [],
       ...overrides,
     },
@@ -180,7 +180,7 @@ describe("the sweep processes every active streamer", () => {
     expect(mocks.syncStreamerPosts).toHaveBeenCalledTimes(3);
     expect(mocks.syncStreamerVideos).toHaveBeenCalledTimes(3);
 
-    expect(result.status).toBe("succeeded");
+    expect(result.status).toBe("completed");
     expect(result.streamersTotal).toBe(3);
     expect(result.streamersSucceeded).toBe(3);
     expect(result.postsProcessed).toBe(9);
@@ -219,7 +219,7 @@ describe("the sweep processes every active streamer", () => {
 
     const result = await runSyncAll({ syncRunId: "run-parent" });
 
-    expect(result.status).toBe("succeeded");
+    expect(result.status).toBe("completed");
     expect(result.streamersTotal).toBe(0);
     expect(mocks.closedRuns[0]?.message).toMatch(/No active streamers/i);
   });
@@ -277,7 +277,7 @@ describe("one streamer failing does not end the sweep", () => {
     const result = await runSyncAll({ syncRunId: "run-parent" });
 
     expect(result.streamersFailed).toBe(1);
-    expect(result.streamers.find((e) => e.streamer_code === "CBS-001")?.status).toBe("succeeded");
+    expect(result.streamers.find((e) => e.streamer_code === "CBS-001")?.status).toBe("completed");
   });
 
   it("reports partial rather than failed when some streamers worked", async () => {
@@ -294,8 +294,8 @@ describe("one streamer failing does not end the sweep", () => {
 
     const result = await runSyncAll({ syncRunId: "run-parent" });
 
-    expect(result.status).toBe("partial");
-    expect(mocks.closedRuns.at(-1)?.status).toBe("partial");
+    expect(result.status).toBe("completed_with_errors");
+    expect(mocks.closedRuns.at(-1)?.status).toBe("completed_with_errors");
   });
 
   it("reports failed only when nothing worked at all", async () => {
@@ -318,7 +318,7 @@ describe("one streamer failing does not end the sweep", () => {
     await runSyncAll({ syncRunId: "run-parent" });
 
     expect(mocks.closedRuns).toHaveLength(1);
-    expect(["succeeded", "partial", "failed"]).toContain(mocks.closedRuns[0]?.status);
+    expect(["completed", "completed_with_errors", "failed"]).toContain(mocks.closedRuns[0]?.status);
   });
 
   it("closes the run even when the roster itself cannot be read", async () => {
@@ -440,7 +440,7 @@ describe("comment collection within the sweep", () => {
 
     // Two of three still collected; the streamer is partial, not failed.
     expect(result.commentsProcessed).toBe(10);
-    expect(result.streamers[0]?.status).toBe("partial");
+    expect(result.streamers[0]?.status).toBe("completed_with_errors");
   });
 
   it("skips comments entirely when asked", async () => {
@@ -528,8 +528,8 @@ describe("a sweep larger than one function window", () => {
     expect(result.finished).toBe(false);
 
     // Progress recorded, but the run is still `running` — never a terminal state.
-    expect(mocks.closedRuns.at(-1)?.status).toBe("running");
-    expect(mocks.closedRuns.every((entry) => entry.status !== "succeeded")).toBe(true);
+    expect(mocks.closedRuns.at(-1)?.status).toBe("processing");
+    expect(mocks.closedRuns.every((entry) => entry.status !== "completed")).toBe(true);
   });
 
   it("does not record a completion audit entry for an unfinished slice", async () => {
@@ -556,8 +556,8 @@ describe("a sweep larger than one function window", () => {
 
     expect(result.remaining).toBe(0);
     expect(result.finished).toBe(true);
-    expect(result.status).toBe("succeeded");
-    expect(mocks.closedRuns.at(-1)?.status).toBe("succeeded");
+    expect(result.status).toBe("completed");
+    expect(mocks.closedRuns.at(-1)?.status).toBe("completed");
     expect(mocks.recordAuditLogSafe).toHaveBeenCalledTimes(1);
   });
 

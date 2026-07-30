@@ -42,7 +42,7 @@ export type SyncVideosResult = {
   videosWithInsightErrors: number;
   pagesFetched: number;
   truncated: boolean;
-  status: "succeeded" | "partial" | "failed";
+  status: "completed" | "completed_with_errors" | "failed";
   error?: NormalizedMetaError;
   insightErrors: { facebookVideoId: string; category: string; message: string }[];
 };
@@ -82,7 +82,7 @@ export async function syncStreamerVideos(params: {
     .values({
       streamerId: streamer.id,
       syncType: params.syncType ?? "manual",
-      status: "running",
+      status: "processing",
       parentSyncRunId: params.parentSyncRunId ?? null,
     })
     .returning({ id: syncRuns.id });
@@ -215,8 +215,8 @@ export async function syncStreamerVideos(params: {
   const status: SyncVideosResult["status"] = nothingWorked
     ? "failed"
     : hadProblems
-      ? "partial"
-      : "succeeded";
+      ? "completed_with_errors"
+      : "completed";
 
   const summary = buildSummary({ fetchError, truncated, insightErrors: insightErrors.length });
 
@@ -229,7 +229,7 @@ export async function syncStreamerVideos(params: {
     ...(fetchError ? { fetchError: { category: fetchError.category, code: fetchError.code } } : {}),
   });
 
-  if (status === "succeeded" || status === "partial") {
+  if (status === "completed" || status === "completed_with_errors") {
     await markStreamerSynced(streamer.id, summary);
   } else if (summary) {
     await recordStreamerFailure(streamer.id, summary);
@@ -302,7 +302,7 @@ function buildSummary(params: {
 
 async function closeRun(
   runId: string,
-  status: "succeeded" | "partial" | "failed",
+  status: "completed" | "completed_with_errors" | "failed",
   message: string | null,
   details: unknown,
 ): Promise<void> {
