@@ -701,7 +701,7 @@ export default async function StreamerDetailPage({
       <PageHeader
         title={streamer.streamerName}
         description={`${streamer.streamerCode} · ${streamer.pageName} (${streamer.pageId})`}
-        actions={
+        primaryAction={
           <div className="flex flex-wrap items-center gap-2">
             {admin ? (
               <Button asChild variant="outline" size="sm">

@@ -59,7 +59,7 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
       <PageHeader
         title={streamer.streamerName}
         description={`${streamer.streamerCode} · ${streamer.pageName} (${streamer.pageId})`}
-        actions={
+        primaryAction={
           <Button asChild variant="outline" size="sm">
             <Link href="/admin/streamers">
               <ArrowLeft className="size-4" aria-hidden />

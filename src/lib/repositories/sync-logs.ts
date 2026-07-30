@@ -99,10 +99,19 @@ export async function getSyncLogTotals(): Promise<SyncLogTotals> {
   const [row] = await db
     .select({
       total: sql<number>`count(*)::int`,
-      succeeded: sql<number>`count(*) filter (where ${syncRuns.status} = 'succeeded')::int`,
-      partial: sql<number>`count(*) filter (where ${syncRuns.status} = 'partial')::int`,
+      /*
+       * These literals must match the sync_status enum exactly.
+       *
+       * They did not. Migration 0009 renamed succeeded to completed, partial to
+       * completed_with_errors and running to processing, and this query kept
+       * the old names — which Postgres rejects outright rather than counting as
+       * zero, so the whole Sync History page threw. `tests/sync-status-labels
+       * .test.ts` now compares these against the schema enum.
+       */
+      succeeded: sql<number>`count(*) filter (where ${syncRuns.status} = 'completed')::int`,
+      partial: sql<number>`count(*) filter (where ${syncRuns.status} = 'completed_with_errors')::int`,
       failed: sql<number>`count(*) filter (where ${syncRuns.status} = 'failed')::int`,
-      running: sql<number>`count(*) filter (where ${syncRuns.status} = 'running')::int`,
+      running: sql<number>`count(*) filter (where ${syncRuns.status} = 'processing')::int`,
     })
     .from(syncRuns)
     .where(isNull(syncRuns.parentSyncRunId));

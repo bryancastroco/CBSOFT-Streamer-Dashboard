@@ -54,7 +54,7 @@ export default async function AdminStreamersPage({
       <PageHeader
         title="Streamers"
         description="Manage the roster, Facebook Page connections and Page token health."
-        actions={
+        primaryAction={
           <Button asChild size="sm">
             <Link href="/admin/streamers/new">
               <Plus className="size-4" aria-hidden />

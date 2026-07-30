@@ -63,7 +63,7 @@ export default async function VideoDetailPage({ params }: { params: Promise<{ id
       <PageHeader
         title={video.title ?? "Untitled video"}
         description={`${formatWhen(video.createdTime)} · ${video.streamerName} (${video.streamerCode})`}
-        actions={
+        primaryAction={
           <div className="flex gap-2">
             {video.permalinkUrl ? (
               <Button asChild variant="outline" size="sm">

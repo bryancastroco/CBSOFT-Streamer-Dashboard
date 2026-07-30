@@ -46,75 +46,255 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /*
+   * CBSOFT semantics, registered so `bg-success-subtle`, `text-warning` and
+   * `border-border-strong` exist as real utilities. Without this they would be
+   * spelled out as arbitrary values at every call site, which is how a design
+   * system quietly becomes twenty-two ad-hoc colour decisions again.
+   */
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-foreground: var(--brand-foreground);
+
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-foreground: var(--info-foreground);
+  --color-neutral-status: var(--neutral-status);
+  --color-neutral-status-subtle: var(--neutral-status-subtle);
+  --color-neutral-status-foreground: var(--neutral-status-foreground);
+
+  --color-sentiment-positive: var(--sentiment-positive);
+  --color-sentiment-mixed: var(--sentiment-mixed);
+  --color-sentiment-neutral: var(--sentiment-neutral);
+  --color-sentiment-negative: var(--sentiment-negative);
+  --color-sentiment-none: var(--sentiment-none);
+
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border-strong: var(--border-strong);
+
+  --color-chart-6: var(--chart-6);
+
+  /* Shell geometry, shared with anything that reasons about it: a sticky
+     offset, a drawer width, a scroll-margin under the fixed header. */
+  --spacing-sidebar: var(--sidebar-width);
+  --spacing-sidebar-collapsed: var(--sidebar-width-collapsed);
+  --spacing-header: var(--header-height);
+  --spacing-content: var(--content-max-width);
+
+  --shadow-xs: var(--elevation-xs);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /*
+   * CBSOFT Blue.
+   *
+   * Deeper and less saturated than the blue Meta uses, so the product reads as
+   * its own thing rather than an imitation of the tool it pulls data from.
+   * Held in oklch because the hover and subtle steps move lightness only and
+   * leave hue alone — an HSL darken drifts towards purple, which is exactly
+   * how a brand colour stops looking like one colour.
+   */
+  --brand: oklch(0.52 0.16 255);
+  --brand-hover: oklch(0.46 0.16 255);
+  --brand-subtle: oklch(0.96 0.025 255);
+  --brand-foreground: oklch(0.99 0.005 255);
+
+  /* Neutral page, white surfaces. The page is a hair off-white so a white
+     card reads as raised without needing a shadow to say so. */
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.21 0.015 258);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(1 0 0);
+
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.21 0.015 258);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.21 0.015 258);
+
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --secondary: oklch(0.968 0.004 250);
+  --secondary-foreground: oklch(0.28 0.015 258);
+  --muted: oklch(0.968 0.004 250);
+  --muted-foreground: oklch(0.53 0.015 258);
+  --accent: var(--brand-subtle);
+  --accent-foreground: oklch(0.36 0.12 255);
+
+  --border: oklch(0.925 0.005 250);
+  --border-strong: oklch(0.86 0.008 250);
+  --input: oklch(0.925 0.005 250);
+  --ring: var(--brand);
+
+  /*
+   * Status. Each has a solid tone for icons and text, a subtle tone for badge
+   * backgrounds, and a foreground that meets contrast on that subtle tone.
+   * Badges are small text, so the pairing is fixed here rather than left to
+   * whoever writes the next badge.
+   */
+  --success: oklch(0.55 0.13 155);
+  --success-subtle: oklch(0.955 0.035 155);
+  --success-foreground: oklch(0.38 0.11 155);
+  --warning: oklch(0.68 0.14 70);
+  --warning-subtle: oklch(0.96 0.045 80);
+  --warning-foreground: oklch(0.44 0.1 60);
+  --danger: oklch(0.55 0.2 25);
+  --danger-subtle: oklch(0.96 0.03 25);
+  --danger-foreground: oklch(0.44 0.17 25);
+  --info: oklch(0.55 0.13 240);
+  --info-subtle: oklch(0.96 0.03 240);
+  --info-foreground: oklch(0.4 0.12 245);
+  --neutral-status: oklch(0.55 0.012 258);
+  --neutral-status-subtle: oklch(0.962 0.004 250);
+  --neutral-status-foreground: oklch(0.42 0.012 258);
+
+  --destructive: var(--danger);
+
+  /* Sentiment is its own scale, not a reuse of status. A negative sentiment
+     is a finding, not a fault, so it must not borrow the error colour. */
+  --sentiment-positive: oklch(0.55 0.13 155);
+  --sentiment-mixed: oklch(0.66 0.13 75);
+  --sentiment-neutral: oklch(0.56 0.012 258);
+  --sentiment-negative: oklch(0.56 0.16 20);
+  --sentiment-none: oklch(0.7 0.008 258);
+
+  /* Chart series, distinguishable in order. The first is the brand, so a
+     single-series chart matches the rest of the page. */
+  --chart-1: oklch(0.52 0.16 255);
+  --chart-2: oklch(0.6 0.13 195);
+  --chart-3: oklch(0.58 0.13 155);
+  --chart-4: oklch(0.68 0.14 70);
+  --chart-5: oklch(0.56 0.16 20);
+  --chart-6: oklch(0.55 0.14 305);
+
+  --radius: 0.5rem;
+
+  /* The sidebar reads as a quieter plane than the content beside it. */
+  --sidebar: oklch(0.995 0.002 250);
+  --sidebar-foreground: oklch(0.3 0.015 258);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--brand-subtle);
+  --sidebar-accent-foreground: oklch(0.36 0.12 255);
+  --sidebar-border: oklch(0.925 0.005 250);
+  --sidebar-ring: var(--brand);
+
+  /* Shell geometry. One place to change it. */
+  --sidebar-width: 16rem;
+  --sidebar-width-collapsed: 4rem;
+  --header-height: 3.5rem;
+  --content-max-width: 90rem;
+
+  /*
+   * Elevation, deliberately shallow. This reads as flat planes separated by
+   * borders; heavy shadows make dense tables look cluttered and were named as
+   * out of scope for this design.
+   */
+  --elevation-xs: 0 1px 2px 0 oklch(0.21 0.015 258 / 0.04);
+  --elevation-sm:
+    0 1px 3px 0 oklch(0.21 0.015 258 / 0.06), 0 1px 2px -1px oklch(0.21 0.015 258 / 0.04);
+  --elevation-md:
+    0 4px 8px -2px oklch(0.21 0.015 258 / 0.07), 0 2px 4px -2px oklch(0.21 0.015 258 / 0.04);
+  --elevation-lg:
+    0 12px 20px -6px oklch(0.21 0.015 258 / 0.1), 0 4px 8px -4px oklch(0.21 0.015 258 / 0.05);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /*
+   * Dark mode is not the light palette inverted. The brand lifts in lightness
+   * so it stays legible on a dark surface, and the subtle tones become dark
+   * tints of the same hue rather than pale washes — a pale badge background on
+   * a dark page glares.
+   */
+  --brand: oklch(0.65 0.15 255);
+  --brand-hover: oklch(0.72 0.14 255);
+  --brand-subtle: oklch(0.3 0.06 255);
+  --brand-foreground: oklch(0.16 0.02 258);
+
+  --background: oklch(0.17 0.012 258);
+  --foreground: oklch(0.96 0.003 250);
+  --surface: oklch(0.215 0.014 258);
+  --surface-raised: oklch(0.25 0.015 258);
+
+  --card: oklch(0.215 0.014 258);
+  --card-foreground: oklch(0.96 0.003 250);
+  --popover: oklch(0.25 0.015 258);
+  --popover-foreground: oklch(0.96 0.003 250);
+
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --secondary: oklch(0.27 0.014 258);
+  --secondary-foreground: oklch(0.96 0.003 250);
+  --muted: oklch(0.27 0.014 258);
+  --muted-foreground: oklch(0.72 0.012 258);
+  --accent: oklch(0.3 0.06 255);
+  --accent-foreground: oklch(0.9 0.05 255);
+
+  --border: oklch(1 0 0 / 11%);
+  --border-strong: oklch(1 0 0 / 20%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: var(--brand);
+
+  --success: oklch(0.7 0.14 155);
+  --success-subtle: oklch(0.3 0.06 155);
+  --success-foreground: oklch(0.88 0.1 155);
+  --warning: oklch(0.79 0.14 75);
+  --warning-subtle: oklch(0.32 0.06 70);
+  --warning-foreground: oklch(0.9 0.1 80);
+  --danger: oklch(0.68 0.18 25);
+  --danger-subtle: oklch(0.31 0.08 25);
+  --danger-foreground: oklch(0.88 0.09 25);
+  --info: oklch(0.7 0.13 240);
+  --info-subtle: oklch(0.3 0.06 240);
+  --info-foreground: oklch(0.88 0.08 240);
+  --neutral-status: oklch(0.72 0.012 258);
+  --neutral-status-subtle: oklch(0.28 0.012 258);
+  --neutral-status-foreground: oklch(0.85 0.008 258);
+
+  --destructive: var(--danger);
+
+  --sentiment-positive: oklch(0.7 0.14 155);
+  --sentiment-mixed: oklch(0.78 0.13 75);
+  --sentiment-neutral: oklch(0.72 0.012 258);
+  --sentiment-negative: oklch(0.68 0.15 20);
+  --sentiment-none: oklch(0.55 0.008 258);
+
+  --chart-1: oklch(0.65 0.15 255);
+  --chart-2: oklch(0.72 0.12 195);
+  --chart-3: oklch(0.7 0.13 155);
+  --chart-4: oklch(0.79 0.14 75);
+  --chart-5: oklch(0.68 0.15 20);
+  --chart-6: oklch(0.68 0.13 305);
+
+  --sidebar: oklch(0.195 0.013 258);
+  --sidebar-foreground: oklch(0.9 0.005 250);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: oklch(0.3 0.06 255);
+  --sidebar-accent-foreground: oklch(0.9 0.05 255);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: var(--brand);
+
+  /* Shadows barely read on a dark surface; depth comes from the border and
+     the surface step instead. Kept defined so the scale stays complete. */
+  --elevation-xs: 0 1px 2px 0 oklch(0 0 0 / 0.3);
+  --elevation-sm: 0 1px 3px 0 oklch(0 0 0 / 0.4), 0 1px 2px -1px oklch(0 0 0 / 0.3);
+  --elevation-md: 0 4px 8px -2px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.3);
+  --elevation-lg: 0 12px 20px -6px oklch(0 0 0 / 0.5), 0 4px 8px -4px oklch(0 0 0 / 0.35);
 }
 
 @layer base {
@@ -126,5 +306,24 @@
   }
   html {
     @apply font-sans;
+  }
+
+  /*
+   * Respect a stated preference for less motion.
+   *
+   * The shell animates a sidebar collapse and a mobile drawer. Neither is
+   * decorative — they communicate where things went — so they are reduced to
+   * near-instant rather than removed, which keeps the meaning and drops the
+   * movement.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

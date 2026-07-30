@@ -19,7 +19,7 @@ export default async function NewStreamerPage() {
       <PageHeader
         title="Add streamer"
         description="Register a CBSOFT streamer and the Facebook Page they broadcast on."
-        actions={
+        primaryAction={
           <Button asChild variant="outline" size="sm">
             <Link href="/admin/streamers">
               <ArrowLeft className="size-4" aria-hidden />

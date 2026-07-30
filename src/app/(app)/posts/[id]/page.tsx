@@ -72,7 +72,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
       <PageHeader
         title={post.streamerName}
         description={`Published ${formatWhen(post.createdTime)} · ${post.streamerCode}`}
-        actions={
+        primaryAction={
           <div className="flex gap-2">
             {post.permalinkUrl ? (
               <Button asChild variant="outline" size="sm">
