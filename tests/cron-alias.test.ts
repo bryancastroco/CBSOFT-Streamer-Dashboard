@@ -20,10 +20,10 @@ function segmentConfig(path: string) {
   const source = readFileSync(path, "utf8");
   const found: Record<string, string> = {};
 
-  for (const [, key, value] of source.matchAll(
-    /^export const (runtime|dynamic|maxDuration) = ([^;]+);/gm,
-  )) {
-    found[key] = value.trim();
+  for (const match of source.matchAll(/^export const (runtime|dynamic|maxDuration) = ([^;]+);/gm)) {
+    const key = match[1];
+    const value = match[2];
+    if (key && value) found[key] = value.trim();
   }
 
   return found;
