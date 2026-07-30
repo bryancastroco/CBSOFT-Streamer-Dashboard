@@ -143,3 +143,49 @@ describe("log records", () => {
     expect(serialized).not.toContain("EAAB");
   });
 });
+
+/**
+ * The credential shapes that reach a log by a route the key check cannot see.
+ *
+ * Each of these is on the phase's never-log list, and each arrives as free text
+ * inside some other field — typically an error message — rather than under a
+ * key named after the secret. The key pattern is blind to that; only the value
+ * scan catches it.
+ */
+describe("credentials embedded in free text", () => {
+  it("strips the password from a database URL but keeps the host", () => {
+    // The real shape: postgres.js puts the connection string into the message
+    // of a connection error, under a key called `error`.
+    const line = JSON.stringify(
+      redact({
+        error:
+          "connect ECONNREFUSED postgresql://postgres:hunter2@db.abcdef.supabase.co:5432/postgres",
+      }),
+    );
+
+    expect(line).not.toContain("hunter2");
+    // Still diagnosable — the point of redacting rather than dropping.
+    expect(line).toContain("db.abcdef.supabase.co");
+  });
+
+  it("redacts a Supabase secret key, which is not a JWT", () => {
+    const line = JSON.stringify(
+      redact({ note: "used sb_secret_9N7jYuqmj24Sf7I1cwJTQz35NDbfc here" }),
+    );
+
+    expect(line).not.toContain("sb_secret_9N7");
+    expect(line).toContain("[redacted-supabase-key]");
+  });
+
+  it("redacts an Anthropic API key", () => {
+    const line = JSON.stringify(redact({ detail: "401 from sk-ant-api03-AAAAAAAAAAAAAAAA" }));
+
+    expect(line).not.toContain("sk-ant-api03-AAAA");
+  });
+
+  it("redacts a database url under its own key name", () => {
+    const line = JSON.stringify(redact({ DATABASE_URL: "postgresql://u:p@h/db" }));
+
+    expect(line).not.toContain("postgresql://u:p");
+  });
+});

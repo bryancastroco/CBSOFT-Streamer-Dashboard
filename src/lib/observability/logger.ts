@@ -19,7 +19,7 @@ export type LogFields = Record<string, unknown>;
  * Matched case-insensitively against the whole key.
  */
 const SECRET_KEY_PATTERN =
-  /^(.*_)?(access_token|accesstoken|token|input_token|page_access_token|encrypted_page_token|password|secret|api_key|apikey|authorization|cookie|service_role_key|anon_key)(_.*)?$/i;
+  /^(.*_)?(access_token|accesstoken|token|input_token|page_access_token|encrypted_page_token|password|secret|api_key|apikey|authorization|cookie|service_role_key|anon_key|database_url|databaseurl|connection_string|connectionstring|dsn)(_.*)?$/i;
 
 /** Value shapes that look like credentials wherever they appear. */
 const SECRET_VALUE_PATTERNS: { pattern: RegExp; replacement: string }[] = [
@@ -40,6 +40,29 @@ const SECRET_VALUE_PATTERNS: { pattern: RegExp; replacement: string }[] = [
     pattern: /([?&](?:access_token|input_token|client_secret)=)[^&\s]+/gi,
     replacement: "$1[redacted]",
   },
+  /*
+   * Credentials inside a database URL.
+   *
+   * `DATABASE_URL` is on the never-log list and arrives in log lines by a route
+   * the key check cannot see: postgres.js puts the whole connection string into
+   * the message of a connection error, so it appears as free text under a key
+   * named `error`. Only the userinfo is replaced, because host and database
+   * name are what make such an error diagnosable.
+   */
+  {
+    pattern: /\b(postgres(?:ql)?:\/\/)[^:@/\s]+:[^@/\s]+@/gi,
+    replacement: "$1[redacted]@",
+  },
+  /*
+   * Supabase's current key format. These are not JWTs, so the rule above does
+   * not see them — `sb_secret_…` is the service role key this project holds.
+   */
+  {
+    pattern: /\bsb_(secret|publishable)_[A-Za-z0-9_-]{10,}/g,
+    replacement: "[redacted-supabase-key]",
+  },
+  // Anthropic API keys.
+  { pattern: /\bsk-ant-[A-Za-z0-9_-]{10,}/g, replacement: "[redacted-api-key]" },
 ];
 
 const REDACTED = "[redacted]";
