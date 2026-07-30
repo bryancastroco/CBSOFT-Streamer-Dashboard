@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { site } from "@/config/site";
+import { resolveAppOrigin } from "@/lib/config/app-origin";
 
 import "./globals.css";
 
@@ -17,13 +18,45 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/*
+ * Resolved, never hard-coded to one vercel.app address.
+ *
+ * `resolveAppOrigin()` prefers NEXT_PUBLIC_APP_URL, falls back to this
+ * deployment's own hostname on a preview, and to localhost in development — so
+ * a preview advertises itself rather than the production domain, and attaching
+ * a custom domain later needs one environment variable rather than a code
+ * change.
+ */
+const origin = resolveAppOrigin();
+
 export const metadata: Metadata = {
+  metadataBase: new URL(origin),
   title: {
     default: site.name,
     template: `%s · ${site.shortName}`,
   },
   description: site.description,
-  robots: { index: false, follow: false },
+  applicationName: site.shortName,
+  alternates: { canonical: "/" },
+  /*
+   * `noindex` stays. This is an internal dashboard behind authentication, and
+   * the Open Graph block below is for a link pasted into Slack or a DM — not
+   * for search. The two are unrelated: `robots` governs indexing, `openGraph`
+   * governs how an already-shared link renders.
+   */
+  robots: { index: false, follow: false, nocache: true },
+  openGraph: {
+    type: "website",
+    siteName: site.shortName,
+    title: site.name,
+    description: site.description,
+    url: origin,
+  },
+  twitter: {
+    card: "summary",
+    title: site.name,
+    description: site.description,
+  },
 };
 
 export default async function RootLayout({
