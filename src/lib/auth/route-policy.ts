@@ -44,6 +44,7 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { path: "/api/health", access: "public" },
 
   // Public surface.
+
   { path: "/login", access: "public" },
   { path: "/auth", access: "public" },
   // Public so a signed-out user landing here sees the page instead of being
@@ -65,6 +66,23 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { path: "/settings", access: "authenticated" },
   { path: "/api/export", access: "authenticated" },
 ] as const;
+
+/**
+ * The machine prefixes, derived rather than restated.
+ *
+ * Each of these needs a `[...unmatched]` catch-all route beside its real
+ * endpoints. Access here is resolved by prefix, so an unmatched path under one
+ * of them is still handed to Next as a machine endpoint — and with no route
+ * file to answer it, Next renders the HTML not-found page with status **200**.
+ * A 200 tells n8n the call worked, which is how a typo becomes a silently empty
+ * export rather than a failed run.
+ *
+ * `tests/machine-route-not-found.test.ts` asserts a catch-all exists for every
+ * entry, so adding a fourth prefix cannot quietly reintroduce that.
+ */
+export const MACHINE_NAMESPACES: readonly string[] = ROUTE_RULES.filter(
+  (rule) => rule.access === "machine",
+).map((rule) => rule.path);
 
 /** Root is special: it only redirects, and decides where based on the session. */
 const ROOT_ACCESS: RouteAccess = "public";
