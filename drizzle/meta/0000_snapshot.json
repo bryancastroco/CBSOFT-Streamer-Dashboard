@@ -1,0 +1,715 @@
+{
+  "id": "37c88edc-1741-43c3-87bf-8e461aedbae0",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.audit_logs": {
+      "name": "audit_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata_json": {
+          "name": "metadata_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "audit_logs_created_at_idx": {
+          "name": "audit_logs_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_logs_user_id_created_at_idx": {
+          "name": "audit_logs_user_id_created_at_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_logs_action_idx": {
+          "name": "audit_logs_action_idx",
+          "columns": [
+            {
+              "expression": "action",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_logs_entity_idx": {
+          "name": "audit_logs_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "audit_logs_user_id_users_id_fk": {
+          "name": "audit_logs_user_id_users_id_fk",
+          "tableFrom": "audit_logs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "audit_logs_action_format_check": {
+          "name": "audit_logs_action_format_check",
+          "value": "\"audit_logs\".\"action\" ~ '^[a-z_]+\\.[a-z_]+$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.streamers": {
+      "name": "streamers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "streamer_code": {
+          "name": "streamer_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "streamer_name": {
+          "name": "streamer_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "page_id": {
+          "name": "page_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "page_name": {
+          "name": "page_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_page_token": {
+          "name": "encrypted_page_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "page_token_last_four": {
+          "name": "page_token_last_four",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_status": {
+          "name": "token_status",
+          "type": "token_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'missing'"
+        },
+        "token_expires_at": {
+          "name": "token_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_scopes": {
+          "name": "token_scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_successful_sync_at": {
+          "name": "last_successful_sync_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_sync_error": {
+          "name": "last_sync_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "streamers_streamer_code_active_key": {
+          "name": "streamers_streamer_code_active_key",
+          "columns": [
+            {
+              "expression": "streamer_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"streamers\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "streamers_page_id_active_key": {
+          "name": "streamers_page_id_active_key",
+          "columns": [
+            {
+              "expression": "page_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"streamers\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "streamers_active_idx": {
+          "name": "streamers_active_idx",
+          "columns": [
+            {
+              "expression": "active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"streamers\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "streamers_token_status_idx": {
+          "name": "streamers_token_status_idx",
+          "columns": [
+            {
+              "expression": "token_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "streamers_last_successful_sync_at_idx": {
+          "name": "streamers_last_successful_sync_at_idx",
+          "columns": [
+            {
+              "expression": "last_successful_sync_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "streamers_streamer_code_format_check": {
+          "name": "streamers_streamer_code_format_check",
+          "value": "\"streamers\".\"streamer_code\" ~ '^[A-Z0-9][A-Z0-9-]*$'"
+        },
+        "streamers_page_id_format_check": {
+          "name": "streamers_page_id_format_check",
+          "value": "\"streamers\".\"page_id\" ~ '^[0-9]+$'"
+        },
+        "streamers_last_four_length_check": {
+          "name": "streamers_last_four_length_check",
+          "value": "\"streamers\".\"page_token_last_four\" ~ '^.{4}$'"
+        },
+        "streamers_token_consistency_check": {
+          "name": "streamers_token_consistency_check",
+          "value": "(\"streamers\".\"encrypted_page_token\" is null and \"streamers\".\"page_token_last_four\" is null and \"streamers\".\"token_status\" = 'missing')\n        or (\"streamers\".\"encrypted_page_token\" is not null and \"streamers\".\"page_token_last_four\" is not null and \"streamers\".\"token_status\" <> 'missing')"
+        },
+        "streamers_token_is_ciphertext_check": {
+          "name": "streamers_token_is_ciphertext_check",
+          "value": "\"streamers\".\"encrypted_page_token\" is null or \"streamers\".\"encrypted_page_token\" ~ '^v[0-9]+\\.'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sync_runs": {
+      "name": "sync_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "streamer_id": {
+          "name": "streamer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sync_type": {
+          "name": "sync_type",
+          "type": "sync_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "sync_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "posts_processed": {
+          "name": "posts_processed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "videos_processed": {
+          "name": "videos_processed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "comments_processed": {
+          "name": "comments_processed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "summaries_generated": {
+          "name": "summaries_generated",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_details_json": {
+          "name": "error_details_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "sync_runs_streamer_id_started_at_idx": {
+          "name": "sync_runs_streamer_id_started_at_idx",
+          "columns": [
+            {
+              "expression": "streamer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sync_runs_status_idx": {
+          "name": "sync_runs_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sync_runs_started_at_idx": {
+          "name": "sync_runs_started_at_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sync_runs_in_flight_idx": {
+          "name": "sync_runs_in_flight_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"sync_runs\".\"status\" in ('pending', 'running')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sync_runs_streamer_id_streamers_id_fk": {
+          "name": "sync_runs_streamer_id_streamers_id_fk",
+          "tableFrom": "sync_runs",
+          "tableTo": "streamers",
+          "columnsFrom": [
+            "streamer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sync_runs_counters_non_negative_check": {
+          "name": "sync_runs_counters_non_negative_check",
+          "value": "\"sync_runs\".\"posts_processed\" >= 0 and \"sync_runs\".\"videos_processed\" >= 0\n        and \"sync_runs\".\"comments_processed\" >= 0 and \"sync_runs\".\"summaries_generated\" >= 0"
+        },
+        "sync_runs_completed_after_started_check": {
+          "name": "sync_runs_completed_after_started_check",
+          "value": "\"sync_runs\".\"completed_at\" is null or \"sync_runs\".\"completed_at\" >= \"sync_runs\".\"started_at\""
+        },
+        "sync_runs_terminal_status_check": {
+          "name": "sync_runs_terminal_status_check",
+          "value": "(\"sync_runs\".\"status\" in ('succeeded', 'failed', 'partial') and \"sync_runs\".\"completed_at\" is not null)\n        or (\"sync_runs\".\"status\" in ('pending', 'running') and \"sync_runs\".\"completed_at\" is null)"
+        },
+        "sync_runs_failure_has_message_check": {
+          "name": "sync_runs_failure_has_message_check",
+          "value": "\"sync_runs\".\"status\" <> 'failed' or \"sync_runs\".\"error_message\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "user_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'viewer'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "users_email_lower_key": {
+          "name": "users_email_lower_key",
+          "columns": [
+            {
+              "expression": "lower(\"email\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_role_idx": {
+          "name": "users_role_idx",
+          "columns": [
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "users_email_format_check": {
+          "name": "users_email_format_check",
+          "value": "position('@' in \"users\".\"email\") > 1"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.sync_status": {
+      "name": "sync_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "partial"
+      ]
+    },
+    "public.sync_type": {
+      "name": "sync_type",
+      "schema": "public",
+      "values": [
+        "full",
+        "incremental",
+        "manual",
+        "backfill",
+        "token_check"
+      ]
+    },
+    "public.token_status": {
+      "name": "token_status",
+      "schema": "public",
+      "values": [
+        "missing",
+        "active",
+        "expired",
+        "revoked",
+        "invalid"
+      ]
+    },
+    "public.user_role": {
+      "name": "user_role",
+      "schema": "public",
+      "values": [
+        "admin",
+        "viewer"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

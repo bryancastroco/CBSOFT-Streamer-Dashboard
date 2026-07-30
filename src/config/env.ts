@@ -1,0 +1,189 @@
+import "server-only";
+
+import { z } from "zod";
+
+/**
+ * Server-side environment contract.
+ *
+ * This module is `server-only`. It is the single place where secrets are read.
+ * Nothing here may ever be imported from a Client Component — doing so is a
+ * build error, which is exactly the guard rail we want around
+ * `SUPABASE_SERVICE_ROLE_KEY`, `META_APP_SECRET` and `TOKEN_ENCRYPTION_KEY`.
+ *
+ * Public values live in `src/config/public-env.ts` and are the only values
+ * allowed to reach the browser.
+ */
+
+const nonEmpty = (name: string) => z.string().min(1, `${name} is required`);
+
+/** A 32-byte key, provided as 64 hex chars or 44-char standard base64. */
+const encryptionKeySchema = nonEmpty("TOKEN_ENCRYPTION_KEY").refine((value) => {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return true;
+  if (/^[A-Za-z0-9+/]{43}=$/.test(value)) return true;
+  return false;
+}, "TOKEN_ENCRYPTION_KEY must be a 32-byte key encoded as 64 hex characters or 44-character base64");
+
+const serverEnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+
+  // Supabase
+  NEXT_PUBLIC_SUPABASE_URL: nonEmpty("NEXT_PUBLIC_SUPABASE_URL").pipe(z.url()),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmpty("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+  SUPABASE_SERVICE_ROLE_KEY: nonEmpty("SUPABASE_SERVICE_ROLE_KEY"),
+
+  // Database (Drizzle / direct Postgres access)
+  DATABASE_URL: nonEmpty("DATABASE_URL").startsWith("postgres"),
+
+  // Meta Graph API — server-side use only
+  META_APP_ID: nonEmpty("META_APP_ID"),
+  META_APP_SECRET: nonEmpty("META_APP_SECRET"),
+  META_GRAPH_API_VERSION: z
+    .string()
+    .regex(/^v\d+\.\d+$/, "META_GRAPH_API_VERSION must look like v25.0")
+    .default("v25.0"),
+
+  // Page-token encryption at rest
+  TOKEN_ENCRYPTION_KEY: encryptionKeySchema,
+
+  // AI — comment summarisation
+  ANTHROPIC_API_KEY: nonEmpty("ANTHROPIC_API_KEY"),
+  AI_PROVIDER: z.enum(["anthropic"]).default("anthropic"),
+  /**
+   * Overridable so a model can be changed without a deploy. Defaults to the
+   * current Opus — summarising a few hundred comments into themes is a
+   * judgement task, not an extraction one.
+   */
+  ANTHROPIC_MODEL: z.string().min(1).default("claude-opus-5"),
+
+  // -------------------------------------------------------------------------
+  // Synchronisation defaults
+  //
+  // Every one of these is a ceiling on how much a single sweep will do. They
+  // exist because the two scarce resources — Meta's per-app rate limit and
+  // Anthropic tokens — are both spent by this system on a schedule nobody
+  // watches. A sweep with no bounds is one misconfiguration away from
+  // exhausting either.
+  // -------------------------------------------------------------------------
+
+  /**
+   * How far back a scheduled sweep looks for content.
+   *
+   * A sweep is incremental by intent: last night's run already collected
+   * everything older. The window exists so a run that has been failing for a
+   * few days catches up when it recovers, rather than walking a Page's entire
+   * history every night.
+   */
+  CONTENT_SYNC_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+
+  /** Posts collected per streamer per sweep. */
+  MAX_POSTS_PER_STREAMER: z.coerce.number().int().min(1).max(1000).default(100),
+
+  /** Videos collected per streamer per sweep. */
+  MAX_VIDEOS_PER_STREAMER: z.coerce.number().int().min(1).max(1000).default(100),
+
+  /**
+   * Ceiling on comments fetched per post or video. Meta pages 25–100 at a
+   * time; without a cap a viral post could pull tens of thousands of comments
+   * into one AI request.
+   */
+  MAX_COMMENTS_PER_CONTENT: z.coerce.number().int().min(1).max(5000).default(500),
+
+  /**
+   * How often the scheduled sweep is expected to run.
+   *
+   * Not a scheduler — Vercel Cron and n8n own the timing. This is the
+   * application's view of the cadence, used to decide whether a cron
+   * invocation is too soon after the last one, and to tell an operator on the
+   * Settings page when the next run is due.
+   */
+  /**
+   * Streamers one sweep invocation may process before handing back.
+   *
+   * The ceiling that keeps a roster-wide sweep inside a single serverless
+   * function window. Vercel kills a function at `maxDuration`, and work handed
+   * to `after()` is bounded by the same limit — so a roster larger than one
+   * window must be advanced across several invocations rather than attempted in
+   * one. n8n (or the cron route) calls the sweep again with the same run id
+   * until `remaining` reaches zero.
+   *
+   * Raise it only if a slice reliably finishes well inside the function limit.
+   */
+  MAX_STREAMERS_PER_SYNC: z.coerce.number().int().min(1).max(200).default(5),
+
+  SYNC_FREQUENCY_HOURS: z.coerce.number().int().min(1).max(168).default(6),
+
+  /**
+   * The kill switch for AI spend.
+   *
+   * When false, comments are still collected and stored — that costs only Meta
+   * quota — but no summary is generated and no Anthropic call is made. Set it
+   * false to keep the pipeline running while a billing problem is sorted out,
+   * rather than disabling the whole sweep.
+   */
+  AI_SUMMARIZATION_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+
+  // Machine-to-machine callers
+  CRON_SECRET: nonEmpty("CRON_SECRET").min(32, "CRON_SECRET must be at least 32 characters"),
+  N8N_API_SECRET: nonEmpty("N8N_API_SECRET").min(
+    32,
+    "N8N_API_SECRET must be at least 32 characters",
+  ),
+
+  // Feature flags
+  GOOGLE_SHEETS_EXPORT_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+});
+
+export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+let cached: ServerEnv | null = null;
+
+/**
+ * Parse and cache the server environment.
+ *
+ * Deliberately lazy: importing this module must not crash a build that has no
+ * secrets available (Vercel build step, CI type-check, `next build` locally).
+ * Call it from the request path instead, where a missing secret is a real fault.
+ */
+export function getServerEnv(): ServerEnv {
+  if (cached) return cached;
+
+  const parsed = serverEnvSchema.safeParse(process.env);
+
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("\n");
+
+    // Never interpolate values — only keys and messages.
+    throw new Error(`Invalid server environment configuration:\n${issues}`);
+  }
+
+  cached = parsed.data;
+  return cached;
+}
+
+/**
+ * Non-throwing variant, for health checks and the settings page, which want to
+ * report "misconfigured" rather than crash the render.
+ */
+export function getServerEnvSafe():
+  { ok: true; env: ServerEnv } | { ok: false; missingKeys: string[] } {
+  const parsed = serverEnvSchema.safeParse(process.env);
+
+  if (parsed.success) {
+    cached = parsed.data;
+    return { ok: true, env: parsed.data };
+  }
+
+  const missingKeys = [
+    ...new Set(parsed.error.issues.map((issue) => issue.path.join(".") || "(root)")),
+  ];
+
+  return { ok: false, missingKeys };
+}
