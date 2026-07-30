@@ -28,6 +28,7 @@ import {
 import { getServerEnvSafe } from "@/config/env";
 import { requireUser } from "@/lib/auth/guards";
 import { isAdmin } from "@/lib/auth/roles";
+import { resolveAppOrigin } from "@/lib/config/app-origin";
 import { SHEET_TABS, branchLetterFor } from "@/lib/google-sheets/sheet-schema";
 import { getExportStatus, N8N_CONTACT_WINDOW_HOURS } from "@/lib/repositories/export-runs";
 
@@ -218,6 +219,12 @@ async function ExportStatus({ sheetsEnabled }: { sheetsEnabled: boolean }) {
 }
 
 export default async function SettingsPage() {
+  /*
+   * Resolved rather than hard-coded: on a preview this is that deployment's own
+   * hostname, because a preview has no canonical URL. Showing the production URL
+   * on a preview would send an operator to configure n8n against the wrong app.
+   */
+  const exportBaseUrl = resolveAppOrigin();
   const user = await requireUser();
   const env = getServerEnvSafe();
   const missing = env.ok ? [] : env.missingKeys;
@@ -352,6 +359,14 @@ export default async function SettingsPage() {
           <CardTitle className="text-base">Credentials and boundaries</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            <strong className="text-foreground">Export endpoint base URL.</strong>{" "}
+            <code className="text-xs">{exportBaseUrl}/api/automation/exports/…</code>
+            {" — "}
+            this is the value the <em>Configuration</em> node in n8n must hold. On a preview
+            deployment it is that deployment&rsquo;s own hostname, because a preview has no
+            canonical URL.
+          </p>
           <p>
             <strong className="text-foreground">n8n owns the Google credential.</strong> This
             application has no field to store one, never asks for one, and never calls the Google

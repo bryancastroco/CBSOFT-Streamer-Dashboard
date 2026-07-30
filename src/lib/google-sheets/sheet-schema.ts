@@ -1,3 +1,5 @@
+import type { ZodTypeAny } from "zod";
+
 import {
   EXPORT_DEFINITIONS,
   type CommentSummaryExportRow,
@@ -671,8 +673,36 @@ export function projectRowToSheet(
 
     // Numbers and booleans are passed through so the sheet can hold them as
     // real values rather than as text that has to be coerced in a formula.
-    projected[column.header] =
-      typeof value === "number" || typeof value === "boolean" ? value : String(value);
+    if (typeof value === "number" || typeof value === "boolean") {
+      projected[column.header] = value;
+      continue;
+    }
+
+    /*
+     * Objects and arrays become JSON, not `[object Object]`.
+     *
+     * Defence in depth rather than a fix: no object reaches here today, because
+     * every field in every export contract is a scalar. Insight values are
+     * carried as `value_display` plus a pre-encoded `value_json`, comment
+     * summary lists are serialised in the repository, and `validateRows` rejects
+     * a row that disagrees with the schema before projection runs.
+     *
+     * It exists because the failure mode is silent. `String({like: 62})` is
+     * `"[object Object]"` — a column of which looks like data until someone
+     * tries to read it — and the guard that currently prevents it is three
+     * layers away in a Zod schema. One future contract field typed
+     * `z.record(...)` would be enough.
+     *
+     * `JSON.stringify` returns `undefined` for a function or a bare `undefined`,
+     * so the result is guarded rather than assumed.
+     */
+    if (typeof value === "object") {
+      const encoded = JSON.stringify(value);
+      projected[column.header] = encoded ?? "";
+      continue;
+    }
+
+    projected[column.header] = String(value);
   }
 
   return projected;
@@ -696,6 +726,22 @@ export function projectRowsToSheet(
  * Built from the definitions above rather than written out again, so the
  * endpoint cannot describe a spreadsheet the exports do not produce.
  */
+/**
+ * Does the contract guarantee this field carries a value?
+ *
+ * "Required" here means the column is always present AND never null — which is
+ * what a spreadsheet consumer actually needs to know before writing a formula
+ * over it. A nullable field is reported optional even though the key is always
+ * emitted, because an empty cell is exactly the case a formula has to handle.
+ */
+function isRequiredField(dataset: ExportDataset, field: string): boolean {
+  const shape = EXPORT_DEFINITIONS[dataset].schema.shape as Record<string, ZodTypeAny>;
+  const entry = shape[field];
+  if (!entry) return false;
+
+  return !entry.safeParse(null).success && !entry.safeParse(undefined).success;
+}
+
 export function buildSheetSchemaDocument() {
   return {
     contract_version: 2,
@@ -723,6 +769,15 @@ export function buildSheetSchemaDocument() {
         type: column.type,
         api_field: column.sourceField,
         is_match_column: column.header === tab.matchColumn,
+        /*
+         * Required is derived from the Zod contract, never hand-maintained.
+         *
+         * A hand-kept flag is a second source of truth that drifts the first
+         * time a field is made nullable, and the drift is invisible: the
+         * schema endpoint keeps promising a value the export stopped
+         * guaranteeing. `isRequiredField` asks the schema itself.
+         */
+        required: isRequiredField(tab.dataset, column.sourceField),
         description: column.description,
       })),
     })),

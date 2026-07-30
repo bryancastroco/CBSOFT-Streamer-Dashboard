@@ -482,3 +482,66 @@ an afternoon on it.
 **Do analysis in a separate spreadsheet** linked with `IMPORTRANGE`. These tabs
 are overwritten by an upsert on every run, and a formula or chart added inside a
 data tab will fight the automation.
+
+---
+
+## Phase 13 — what changed on the wire
+
+> On a case-insensitive filesystem `docs/n8n-production-workflow.md` and this
+> file are the same document, so the Phase 13 contract lives here rather than in
+> a second file that could only ever be a duplicate.
+
+### The statuses were renamed
+
+A workflow branching on the old names will never observe a terminal state.
+
+| Before | Now |
+|---|---|
+| `pending` | `queued` |
+| `running` | `processing` |
+| `succeeded` | `completed` |
+| `partial` | `completed_with_errors` |
+| — | `cancelled` (new) |
+
+Branch on `finished` first, then on `status`:
+
+- `completed` — export.
+- `completed_with_errors` — **export anyway**, and alert. Some streamers worked
+  and some did not. Treating it as failure discards good data; treating it as
+  success hides a broken Page.
+- `failed` / `cancelled` — alert, do not export.
+
+### 409 is now a possible answer to `sync-all`
+
+Concurrency control moved into the database. A partial unique index admits one
+top-level run in `queued` or `processing`, so a second caller receives:
+
+```json
+{ "ok": false, "error": "sync_already_running" }
+```
+
+**Do not retry a 409.** Another sweep owns the lock; retrying immediately just
+loses again. Poll the existing run, or wait for the next schedule. The previous
+design read for an in-flight run and then inserted, which is a race — n8n and
+Vercel Cron arriving in the same second both started a sweep against a Meta rate
+limit that is per app.
+
+### Runs now record who asked
+
+`trigger_source` is one of `admin`, `n8n`, `vercel_cron`, `system_retry`, and
+appears on the run status response and the Sync Logs tab. It is separate from
+`sync_type`, which says what the run did rather than who wanted it.
+
+### Correlation ids
+
+Send `X-Request-ID` and it is echoed on every response, including 401 and 429.
+Omit it and the server mints one and returns it anyway. Either way a retried run
+can be joined to its log lines, which was previously guesswork.
+
+### The schema endpoint gained `required`
+
+`GET /api/automation/google-sheets/schema` now marks each column required or
+optional, derived from the Zod contract rather than hand-maintained — a
+hand-kept flag drifts the first time a field becomes nullable, and the drift is
+invisible. A column is `required` only when it is always present *and* never
+null, which is what a formula author actually needs to know.

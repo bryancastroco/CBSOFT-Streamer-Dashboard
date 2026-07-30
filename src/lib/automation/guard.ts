@@ -2,6 +2,7 @@ import "server-only";
 
 import { findTokenMaterial } from "@/lib/automation/token-material";
 import { childLogger } from "@/lib/observability/logger";
+import { REQUEST_ID_HEADER, resolveRequestId } from "@/lib/observability/request-id";
 import { authenticateMachineRequest } from "@/lib/security/machine-auth";
 import { RateLimiter, rateLimitHeaders, type RateLimitRule } from "@/lib/security/rate-limit";
 
@@ -60,7 +61,14 @@ function maybePrune(): void {
 }
 
 export type AutomationGuardResult =
-  { ok: true; headers: Record<string, string> } | { ok: false; response: Response };
+  | {
+      ok: true;
+      /** Echo these on the response: rate-limit budget and the correlation id. */
+      headers: Record<string, string>;
+      /** The id this request is known by, in logs and in the response header. */
+      requestId: string;
+    }
+  | { ok: false; response: Response };
 
 /** The error shape every automation endpoint returns. Stable, and terse. */
 export function automationError(
@@ -83,7 +91,22 @@ export function automationOk(
 ): Response {
   return Response.json(
     { ok: true, ...data },
-    { status, headers: { "cache-control": "no-store", ...headers } },
+    {
+      status,
+      headers: {
+        /*
+         * `no-store`, not merely `no-cache`.
+         *
+         * Every automation response is either a roster of streamers or the
+         * state of one run — caller-specific, credential-gated, and useless to
+         * anyone else. `no-store` additionally forbids writing it to disk,
+         * which matters on a shared CDN where `private` alone would not.
+         */
+        "cache-control": "no-store, no-cache, must-revalidate",
+        // A workflow correlating its own retries needs the id back.
+        ...headers,
+      },
+    },
   );
 }
 
@@ -99,7 +122,14 @@ export function guardAutomationRequest(
   request: Request,
   kind: AutomationEndpointKind,
 ): AutomationGuardResult {
-  const log = childLogger({ component: "automation.guard", kind });
+  /*
+   * Resolved once, at the front door, and echoed on every response including
+   * the refusals. A workflow that retried six times needs to know which of its
+   * attempts produced which log line, and it cannot if the id only exists on
+   * the happy path.
+   */
+  const requestId = resolveRequestId(request);
+  const log = childLogger({ component: "automation.guard", kind, requestId });
 
   const auth = authenticateMachineRequest(request, "n8n");
 
@@ -117,14 +147,22 @@ export function guardAutomationRequest(
               "not_configured",
               "Automation is not configured on this deployment.",
             )
-          : automationError(401, "unauthorized", "Valid bearer credentials are required."),
+          : automationError(
+              401,
+              "unauthorized",
+              "Valid bearer credentials are required.",
+              undefined,
+              {
+                [REQUEST_ID_HEADER]: requestId,
+              },
+            ),
     };
   }
 
   maybePrune();
 
   const decision = limiter.check(`n8n:${kind}`, AUTOMATION_RATE_LIMITS[kind]);
-  const headers = rateLimitHeaders(decision);
+  const headers = { ...rateLimitHeaders(decision), [REQUEST_ID_HEADER]: requestId };
 
   if (!decision.allowed) {
     log.warn("automation.rate_limited", { retryAfterSeconds: decision.retryAfterSeconds });
@@ -141,7 +179,7 @@ export function guardAutomationRequest(
     };
   }
 
-  return { ok: true, headers };
+  return { ok: true, headers, requestId };
 }
 
 export type BodyResult<T> = { ok: true; body: T } | { ok: false; response: Response };
