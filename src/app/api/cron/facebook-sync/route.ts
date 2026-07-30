@@ -1,8 +1,20 @@
-import { GET as dailySync, maxDuration as dailyMaxDuration } from "@/app/api/cron/daily-sync/route";
+import { GET as dailySync } from "@/app/api/cron/daily-sync/route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = dailyMaxDuration;
+/*
+ * Literal, and deliberately not re-exported from daily-sync.
+ *
+ * Next reads segment configuration by static analysis at build time — it does
+ * not evaluate the module. `export const maxDuration = dailyMaxDuration` is an
+ * imported binding, so the analyser cannot see a number and rejects the whole
+ * segment with "Invalid segment configuration export". That failed the Vercel
+ * build while passing locally, which is the worst shape a bug can have.
+ *
+ * So this is a literal that must match daily-sync's. `tests/cron-alias.test.ts`
+ * asserts they stay equal, since nothing else now ties them together.
+ */
+export const maxDuration = 300;
 
 /**
  * `/api/cron/facebook-sync` — the name Phase 13 specifies for the fallback.
