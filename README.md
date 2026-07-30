@@ -369,3 +369,30 @@ dashboard. Rate-limit counters are per process, so on serverless the effective c
 
 If you believe you have found a vulnerability, do not open a public issue — contact the CBSOFT
 engineering lead directly.
+
+## Documentation map
+
+The specification for this project named documents in lower case. This
+repository uses upper case throughout, and on Windows and macOS the two are the
+same file — `docs/rollback.md` and `docs/ROLLBACK.md` cannot coexist. The
+repository convention won; this table maps one to the other.
+
+| Asked for | In this repository | Covers |
+| --- | --- | --- |
+| `vercel-deployment.md` | [VERCEL-DEPLOYMENT.md](docs/VERCEL-DEPLOYMENT.md) | Project settings, env vars, deploying, cron |
+| `supabase-production.md` | [SUPABASE-PRODUCTION.md](docs/SUPABASE-PRODUCTION.md) | Connection, migrations, auth, first admin, backups |
+| `meta-api-setup.md` | [META-API-SETUP.md](docs/META-API-SETUP.md) | App config, Page permissions, tokens, Meta's limits |
+| `anthropic-setup.md` | [ANTHROPIC-SETUP.md](docs/ANTHROPIC-SETUP.md) | Enabling AI summaries, cost, failure behaviour |
+| `n8n-production-workflow.md` | [N8N-PRODUCTION-WORKFLOW.md](docs/N8N-PRODUCTION-WORKFLOW.md) | The production workflow, node by node |
+| `google-sheets-setup.md` | [GOOGLE-SHEETS.md](docs/GOOGLE-SHEETS.md) + [N8N-GOOGLE-SHEETS.md](docs/N8N-GOOGLE-SHEETS.md) | Tab layout, match columns, upsert wiring |
+| `security-and-secret-rotation.md` | [SECURITY-AND-SECRET-ROTATION.md](docs/SECURITY-AND-SECRET-ROTATION.md) | Where secrets live, rotation index |
+| `production-troubleshooting.md` | [PRODUCTION-TROUBLESHOOTING.md](docs/PRODUCTION-TROUBLESHOOTING.md) | Symptom-first diagnosis |
+| `rollback.md` | [ROLLBACK.md](docs/ROLLBACK.md) | Deployment, database, n8n, tokens, every rotation |
+
+Also present, from earlier phases: [ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[AUTHORIZATION.md](docs/AUTHORIZATION.md), [DATA-MODEL.md](docs/DATA-MODEL.md),
+[SECURITY.md](docs/SECURITY.md), [SETUP.md](docs/SETUP.md),
+[ENVIRONMENTS.md](docs/ENVIRONMENTS.md), [SYNC-ENGINE.md](docs/SYNC-ENGINE.md),
+[PAGE-TOKENS.md](docs/PAGE-TOKENS.md),
+[COMMENT-ANALYSIS.md](docs/COMMENT-ANALYSIS.md),
+[INTERFACE.md](docs/INTERFACE.md), [N8N-AUTOMATION.md](docs/N8N-AUTOMATION.md).
