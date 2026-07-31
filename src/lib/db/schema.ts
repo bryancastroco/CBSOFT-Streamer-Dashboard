@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   doublePrecision,
@@ -856,3 +857,74 @@ export type NewCommentRow = typeof comments.$inferInsert;
 
 export type CommentSummaryRow = typeof commentSummaries.$inferSelect;
 export type NewCommentSummaryRow = typeof commentSummaries.$inferInsert;
+
+/**
+ * Columns shared by the current-metrics table and its snapshot history.
+ *
+ * Written once because the two tables must agree exactly — a snapshot that
+ * cannot hold what the current row holds is a history with gaps in it, and the
+ * gap would only surface when someone opened a trend chart months later.
+ *
+ * Every metric is nullable and stays null when Meta reported nothing. A zero
+ * means Meta returned zero. Preserving that difference is the point of the
+ * whole table: an average computed over silently-zeroed rows is wrong in a way
+ * nobody can see.
+ */
+const metricColumns = {
+  reach: integer("reach"),
+  views: integer("views"),
+  viewers: integer("viewers"),
+  interactions: integer("interactions"),
+  interactionsIsCalculated: boolean("interactions_is_calculated").notNull().default(false),
+  likes: integer("likes"),
+  reactions: integer("reactions"),
+  comments: integer("comments"),
+  shares: integer("shares"),
+  /* Milliseconds. bigint because total watch time passes 2^31 ms in about 25
+     days of viewing, which a busy Page reaches easily. */
+  watchTimeMs: bigint("watch_time_ms", { mode: "number" }),
+  averagePlayTimeMs: bigint("average_play_time_ms", { mode: "number" }),
+  threeSecondViews: integer("three_second_views"),
+  reelsPlays: integer("reels_plays"),
+  /** Per-metric status and reason. See `src/lib/metrics/registry.ts`. */
+  availabilityJson: jsonb("availability_json").notNull().default({}),
+  /** Which Meta name and endpoint supplied each value. */
+  sourceMappingJson: jsonb("source_mapping_json").notNull().default({}),
+  graphApiVersion: text("graph_api_version").notNull(),
+  /** Deterministic over the metric values, so snapshots deduplicate. */
+  metricHash: text("metric_hash").notNull(),
+} as const;
+
+/** Latest canonical metrics: one row per piece of content. */
+export const contentMetricsCurrent = pgTable("content_metrics_current", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  contentType: contentTypeEnum("content_type").notNull(),
+  postId: uuid("post_id").references(() => posts.id, { onDelete: "cascade" }),
+  videoId: uuid("video_id").references(() => videos.id, { onDelete: "cascade" }),
+  streamerId: uuid("streamer_id")
+    .notNull()
+    .references(() => streamers.id, { onDelete: "cascade" }),
+  ...metricColumns,
+  lastCollectedAt: timestamp("last_collected_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Metric history, for trends. Deduplicated on `metric_hash` by the database. */
+export const contentMetricSnapshots = pgTable("content_metric_snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  contentType: contentTypeEnum("content_type").notNull(),
+  postId: uuid("post_id").references(() => posts.id, { onDelete: "cascade" }),
+  videoId: uuid("video_id").references(() => videos.id, { onDelete: "cascade" }),
+  streamerId: uuid("streamer_id")
+    .notNull()
+    .references(() => streamers.id, { onDelete: "cascade" }),
+  ...metricColumns,
+  collectedAt: timestamp("collected_at", { withTimezone: true }).notNull(),
+});
+
+export type ContentMetricsCurrentRow = typeof contentMetricsCurrent.$inferSelect;
+export type NewContentMetricsCurrentRow = typeof contentMetricsCurrent.$inferInsert;
+
+export type ContentMetricSnapshotRow = typeof contentMetricSnapshots.$inferSelect;
+export type NewContentMetricSnapshotRow = typeof contentMetricSnapshots.$inferInsert;
