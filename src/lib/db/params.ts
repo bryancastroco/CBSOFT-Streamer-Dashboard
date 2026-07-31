@@ -65,6 +65,29 @@ export function tsParam(value: Date | null | undefined): string | null {
  * `tests/raw-sql-timestamps.test.ts` fails the build on a `sql<Date…>`
  * selection, because that shape is never honest.
  */
+/**
+ * Pagination bounds for a hand-written `LIMIT … OFFSET …`.
+ *
+ * Drizzle's `.limit()` / `.offset()` builders omit the clause when handed
+ * nothing. A raw fragment cannot: `limit ${undefined}` interpolates to nothing
+ * and Postgres rejects the whole statement with
+ *
+ *     42601: syntax error at or near "offset"
+ *
+ * — which takes out the entire page rather than returning an unpaginated
+ * result. Both current callers parse these through Zod schemas that supply
+ * defaults, so this is a guard rather than a fix for a live fault; the point is
+ * that the raw form has no safe failure mode of its own and the two queries
+ * using it are the most complex in the codebase.
+ */
+export function pageSize(value: number | null | undefined, fallback = 25): number {
+  return Number.isFinite(value) && (value as number) > 0 ? Math.trunc(value as number) : fallback;
+}
+
+export function pageOffset(value: number | null | undefined): number {
+  return Number.isFinite(value) && (value as number) > 0 ? Math.trunc(value as number) : 0;
+}
+
 export function tsResult(value: string | Date | null | undefined): Date | null {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;

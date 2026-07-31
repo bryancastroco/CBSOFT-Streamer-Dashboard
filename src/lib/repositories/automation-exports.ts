@@ -7,7 +7,7 @@ import { realFindings } from "@/lib/ai/presentation";
 import { sanitiseMessage } from "@/lib/automation/sanitise";
 import type { ExportQuery } from "@/lib/automation/query";
 import { getDb } from "@/lib/db";
-import { tsParam } from "@/lib/db/params";
+import { pageOffset, pageSize, tsParam } from "@/lib/db/params";
 import {
   commentSummaries,
   postInsights,
@@ -677,7 +677,7 @@ export async function exportCommentSummaries(
       with unified as (${source})
       select * from unified
       order by updated_at asc, summary_id asc
-      limit ${filters.limit} offset ${filters.offset}
+      limit ${pageSize(filters.limit)} offset ${pageOffset(filters.offset)}
     `),
     db.execute<{ value: number; watermark: string | null }>(sql`
       with unified as (${source})

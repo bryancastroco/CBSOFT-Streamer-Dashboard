@@ -4,7 +4,7 @@ import { sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
-import { tsParam } from "@/lib/db/params";
+import { pageOffset, pageSize, tsParam } from "@/lib/db/params";
 import type { ContentType } from "@/lib/comments/content-ref";
 import type { ContentScope } from "@/lib/filters/period";
 import type { AnalysisSortKey, SortState } from "@/lib/filters/sorting";
@@ -241,7 +241,7 @@ export async function listCommentAnalyses(
       with unified as (${source})
       select * from unified
       order by ${column} ${direction} nulls last, content_created_at desc, summary_id asc
-      limit ${filters.limit} offset ${filters.offset}
+      limit ${pageSize(filters.limit)} offset ${pageOffset(filters.offset)}
     `),
     db.execute<{ value: number }>(sql`
       with unified as (${source})
