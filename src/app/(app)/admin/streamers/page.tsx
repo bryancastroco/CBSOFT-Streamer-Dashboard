@@ -22,6 +22,15 @@ import { listStreamers } from "@/lib/repositories/streamers";
 export const metadata: Metadata = { title: "Streamers" };
 export const dynamic = "force-dynamic";
 
+/*
+ * This page hosts the create, validate and replace-token actions, each of
+ * which calls Meta. Server Actions run in the invoking page's function, so the
+ * limit has to be declared here rather than inherited from the /api route that
+ * does the same work. A literal, because Next resolves segment configuration
+ * by static analysis.
+ */
+export const maxDuration = 300;
+
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
   return new Intl.DateTimeFormat("en-GB", {

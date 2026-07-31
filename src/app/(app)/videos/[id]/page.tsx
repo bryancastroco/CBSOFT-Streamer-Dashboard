@@ -27,6 +27,23 @@ import { videoIdSchema } from "@/lib/validation/videos";
 export const metadata: Metadata = { title: "Video" };
 export const dynamic = "force-dynamic";
 
+/*
+ * Server Actions run inside this page's function, so the page's segment
+ * configuration is what governs them. Every /api route that performs a sync
+ * already declares 300 seconds; pages declared nothing and inherited the
+ * platform default, which is shorter than a real sync takes — historical runs
+ * are 7 to 25 seconds and the roster will only grow.
+ *
+ * The consequence was not a visible error. The function was killed mid-flight,
+ * so the action never returned, the button span forever, and the sync run it
+ * had already opened stayed `processing` with no completion time — an
+ * abandoned run that also holds the single-sweep lock.
+ *
+ * A literal, because Next reads segment configuration by static analysis and
+ * rejects an imported binding.
+ */
+export const maxDuration = 300;
+
 function formatWhen(value: Date | null): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("en-GB", {

@@ -29,6 +29,23 @@ import { streamerIdSchema } from "@/lib/validation/streamers";
 export const metadata: Metadata = { title: "Streamer" };
 export const dynamic = "force-dynamic";
 
+/*
+ * Server Actions run inside this page's function, so the page's segment
+ * configuration is what governs them. Every /api route that performs a sync
+ * already declares 300 seconds; pages declared nothing and inherited the
+ * platform default, which is shorter than a real sync takes — historical runs
+ * are 7 to 25 seconds and the roster will only grow.
+ *
+ * The consequence was not a visible error. The function was killed mid-flight,
+ * so the action never returned, the button span forever, and the sync run it
+ * had already opened stayed `processing` with no completion time — an
+ * abandoned run that also holds the single-sweep lock.
+ *
+ * A literal, because Next reads segment configuration by static analysis and
+ * rejects an imported binding.
+ */
+export const maxDuration = 300;
+
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
   return new Intl.DateTimeFormat("en-GB", {
@@ -184,8 +201,8 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
         <CardHeader>
           <CardTitle className="text-base">Synchronisation</CardTitle>
           <CardDescription>
-            Queuing a manual sync writes a pending run now. The engine that executes it is built in
-            Phase 5.
+            Syncing fetches from Meta directly and can take up to half a minute. Queue a manual run
+            instead to hand it to the next automation sweep.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
