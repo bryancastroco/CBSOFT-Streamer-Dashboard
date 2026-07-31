@@ -9,6 +9,7 @@ import { getDb } from "@/lib/db";
 import { streamers, syncRuns, type SyncRunType } from "@/lib/db/schema";
 import { indicatesTokenProblem, type NormalizedMetaError } from "@/lib/meta/errors";
 import {
+  POSTS_PAGE_SIZE,
   fetchPostInsights,
   fetchPublishedPosts,
   normalizeInsights,
@@ -16,6 +17,7 @@ import {
   type NormalizedPost,
 } from "@/lib/meta/posts";
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from "@/lib/meta/retry";
+import { getServerEnv } from "@/config/env";
 import { childLogger } from "@/lib/observability/logger";
 import { mapFacebookPostIds, upsertPostInsights, upsertPosts } from "@/lib/repositories/posts";
 import { getStreamerById, withStreamerToken } from "@/lib/repositories/streamers";
@@ -104,7 +106,34 @@ export async function syncStreamerPosts(params: {
     pageId: streamer.pageId,
   });
 
-  log.info("sync.started", { since: params.since?.toISOString() ?? null });
+  /*
+   * Bound the window, always.
+   *
+   * `since` and `maxPages` were optional with no default, so a manual sync —
+   * which passes neither — walked the Page's entire history. On a real Page
+   * that meant 1,624 posts back to 2019 and 7,000 insight rows, one Graph call
+   * per post, far past any function timeout. It never finished, and each
+   * attempt left an abandoned run holding the sweep lock.
+   *
+   * The limits already existed in configuration and were simply not applied
+   * here: the automation sweep passes its own `since`, which is why it only
+   * ever processed a handful of posts and this went unnoticed.
+   *
+   * A full backfill is a legitimate thing to want, but it is a deliberate
+   * operation with its own pacing — not what a button labelled "Sync posts"
+   * should do by surprise.
+   */
+  const env = getServerEnv();
+  const since =
+    params.since ?? new Date(Date.now() - env.CONTENT_SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const maxPages =
+    params.maxPages ?? Math.max(1, Math.ceil(env.MAX_POSTS_PER_STREAMER / POSTS_PAGE_SIZE));
+
+  log.info("sync.started", {
+    since: since.toISOString(),
+    maxPages,
+    lookbackDays: env.CONTENT_SYNC_LOOKBACK_DAYS,
+  });
 
   let postsProcessed = 0;
   let insightsWritten = 0;
@@ -119,8 +148,8 @@ export async function syncStreamerPosts(params: {
       const fetched = await fetchPublishedPosts({
         pageId: streamer.pageId,
         token,
-        ...(params.since ? { since: params.since } : {}),
-        ...(params.maxPages !== undefined ? { maxPages: params.maxPages } : {}),
+        since,
+        maxPages,
         logger: log,
       });
 
