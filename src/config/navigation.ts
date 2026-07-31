@@ -184,7 +184,6 @@ export const FOOTER_NAV: readonly NavItem[] = [
     icon: BookOpen,
     description: "Setup guides, troubleshooting and secret rotation.",
     permission: "dashboard.view",
-    placeholder: true,
   },
   {
     title: "Settings",
