@@ -64,7 +64,7 @@ export type MetricsFilters = {
  * empty list, so a non-empty array is not the same as a finding — counting array
  * length would report every analysed item as urgent.
  */
-const hasUrgentIssue = sql`
+export const hasUrgentIssue = sql`
   jsonb_typeof(${commentSummaries.urgentIssuesJson}) = 'array'
   and exists (
     select 1

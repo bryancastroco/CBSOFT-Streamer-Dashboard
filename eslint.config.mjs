@@ -87,6 +87,14 @@ const eslintConfig = defineConfig([
       // src/components or src/app(client) imports from here.
       "src/lib/automation/**",
       "src/lib/observability/**",
+      /*
+       * `settings-view.ts` reads configuration to describe it on the admin
+       * screens, and imports `server-only` so it cannot be pulled into a client
+       * bundle. It also never puts a secret in its output — a credential
+       * becomes `present: true`, and there is no path back to the string. The
+       * bundle scan in `tests/bundle-secrets.test.ts` is the backstop.
+       */
+      "src/lib/config/**",
       "src/lib/auth/**",
       "src/lib/supabase/**",
       "src/lib/api/**",

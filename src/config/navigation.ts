@@ -132,7 +132,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Plug,
         description: "Meta app configuration and Page token health.",
         permission: "settings.manage",
-        placeholder: true,
       },
       {
         title: "AI settings",
@@ -140,7 +139,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Bot,
         description: "Comment summarisation provider, model and limits.",
         permission: "settings.manage",
-        placeholder: true,
       },
       {
         title: "n8n integration",
@@ -148,7 +146,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Share2,
         description: "Automation endpoints and the workflow that calls them.",
         permission: "settings.manage",
-        placeholder: true,
       },
       {
         title: "Google Sheets",
@@ -156,7 +153,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Table2,
         description: "Export tabs, match columns and recent export runs.",
         permission: "settings.manage",
-        placeholder: true,
       },
       {
         title: "General settings",
@@ -164,7 +160,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Sliders,
         description: "Sync frequency, batch sizes and workspace defaults.",
         permission: "settings.manage",
-        placeholder: true,
       },
     ],
   },
