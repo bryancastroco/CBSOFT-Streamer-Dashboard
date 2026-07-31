@@ -43,6 +43,8 @@ export const AUDIT_ACTIONS = {
   tokenAdded: "token.added",
   tokenReplaced: "token.replaced",
   tokenValidated: "token.validated",
+  /** A stored Page token was swapped for a longer-lived one from Meta. */
+  tokenExtended: "token.extended",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -80,4 +82,5 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.tokenAdded]: "Token added",
   [AUDIT_ACTIONS.tokenReplaced]: "Token replaced",
   [AUDIT_ACTIONS.tokenValidated]: "Token validated",
+  [AUDIT_ACTIONS.tokenExtended]: "Token extended",
 };

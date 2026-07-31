@@ -11,6 +11,7 @@ import { syncRuns } from "@/lib/db/schema";
 import { childLogger } from "@/lib/observability/logger";
 import { listRecentPostIdsForStreamer } from "@/lib/repositories/posts";
 import {
+  extendStreamerToken,
   listPendingStreamersForRun,
   listSyncableStreamers,
   validateStreamerToken,
@@ -124,6 +125,8 @@ export type StreamerSweepResult = {
   video_insights_written: number;
   comments_processed: number;
   summaries_generated: number;
+  /** True when this sweep swapped the token for a longer-lived one. */
+  token_extended: boolean;
   /** Content items whose canonical metrics were refreshed after the sync. */
   metrics_rolled_up: number;
   /** Sanitised. Never a raw Meta payload. */
@@ -317,6 +320,7 @@ export async function runSyncAll(params: {
         video_insights_written: 0,
         comments_processed: 0,
         summaries_generated: 0,
+        token_extended: false,
         metrics_rolled_up: 0,
         errors: [{ step: "streamer", message }],
       });
@@ -433,6 +437,7 @@ async function sweepStreamer(
     video_insights_written: 0,
     comments_processed: 0,
     summaries_generated: 0,
+    token_extended: false,
     metrics_rolled_up: 0,
     errors: [],
   };
@@ -468,6 +473,42 @@ async function sweepStreamer(
 
       log.warn("sync.all.token_unusable", { tokenStatus: validation.data.validation.status });
       return result;
+    }
+
+    /*
+     * ---- 3b. Renew the token while it still works -------------------------
+     *
+     * The only self-service remedy for expiry that exists. Meta hands back a
+     * non-expiring Page token when asked for the Page's own `access_token`
+     * field — but only while the current one is valid. Once it lapses every
+     * refresh path answers `(190) Session has expired` and a human has to sign
+     * into Facebook.
+     *
+     * That is not hypothetical here: one Page's token expired mid-project and
+     * took that streamer's collection down until it was replaced by hand. So
+     * the sweep renews rather than waits, on every run.
+     *
+     * A no-op when the token is already permanent — `extendStreamerToken`
+     * returns `unchanged` and writes nothing, so this costs one `debug_token`
+     * call per streamer per sweep and produces no audit noise.
+     */
+    try {
+      const extension = await extendStreamerToken({ actorId: null, id: streamer.id });
+
+      if (extension.ok && extension.data.outcome.status === "extended") {
+        result.token_extended = true;
+
+        log.info("sync.all.token_extended", {
+          expiresAt: extension.data.outcome.expiresAt?.toISOString() ?? "never",
+        });
+      }
+    } catch (cause) {
+      /*
+       * Never fatal. The token that got us this far still works — failing the
+       * streamer over a renewal that can be retried tomorrow would discard a
+       * sync that was about to succeed.
+       */
+      log.warn("sync.all.token_extension_failed", { error: sanitiseThrown(cause) });
     }
   }
 

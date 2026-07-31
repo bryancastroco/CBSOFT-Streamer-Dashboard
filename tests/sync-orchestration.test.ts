@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   listRecentVideoIdsForStreamer: vi.fn(),
   recordAuditLogSafe: vi.fn(),
   rollUpMetrics: vi.fn(),
+  extendStreamerToken: vi.fn(),
   closedRuns: [] as { status: string; message: string | null; totals: unknown }[],
 }));
 
@@ -41,6 +42,7 @@ vi.mock("@/lib/repositories/streamers", () => ({
   listSyncableStreamers: mocks.listSyncableStreamers,
   listPendingStreamersForRun: mocks.listSyncableStreamers,
   validateStreamerToken: mocks.validateStreamerToken,
+  extendStreamerToken: mocks.extendStreamerToken,
 }));
 
 vi.mock("@/lib/repositories/posts", () => ({
@@ -170,6 +172,15 @@ beforeEach(() => {
   mocks.listRecentVideoIdsForStreamer.mockResolvedValue([]);
   mocks.recordAuditLogSafe.mockResolvedValue(undefined);
   mocks.rollUpMetrics.mockResolvedValue({ processed: 0, succeeded: 0, failed: 0 });
+  /*
+   * The sweep renews each token while it still works. Stubbed as a no-op:
+   * unstubbed it is undefined, the call throws, and the sweep quietly runs its
+   * catch path on every streamer — passing tests exercising the failure branch.
+   */
+  mocks.extendStreamerToken.mockResolvedValue({
+    ok: true,
+    data: { outcome: { status: "unchanged", reason: "already permanent" } },
+  });
 });
 
 afterEach(() => {

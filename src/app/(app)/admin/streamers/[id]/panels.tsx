@@ -10,6 +10,7 @@ import {
   requestSyncAction,
   setStreamerActiveAction,
   updateStreamerAction,
+  extendTokenAction,
   validateTokenAction,
 } from "@/app/(app)/admin/streamers/actions";
 import { idleState, type ActionState } from "@/lib/forms/action-state";
@@ -137,18 +138,39 @@ export function EditStreamerPanel({
 export function TokenPanel({ streamerId, hasToken }: { streamerId: string; hasToken: boolean }) {
   const [replaceState, replaceAction] = useActionState(replaceTokenAction, idleState);
   const [validateState, validateAction] = useActionState(validateTokenAction, idleState);
+  const [extendState, extendAction] = useActionState(extendTokenAction, idleState);
 
   useActionToast(replaceState);
   useActionToast(validateState);
+  useActionToast(extendState);
 
   return (
     <div className="space-y-6">
-      <form action={validateAction}>
-        <input type="hidden" name="id" value={streamerId} />
-        <Submit pendingLabel="Checking with Meta…" variant="outline" size="sm">
-          {hasToken ? "Validate token now" : "No token to validate"}
-        </Submit>
-      </form>
+      <div className="flex flex-wrap gap-2">
+        <form action={validateAction}>
+          <input type="hidden" name="id" value={streamerId} />
+          <Submit pendingLabel="Checking with Meta…" variant="outline" size="sm">
+            {hasToken ? "Validate token now" : "No token to validate"}
+          </Submit>
+        </form>
+
+        {hasToken ? (
+          <form action={extendAction}>
+            <input type="hidden" name="id" value={streamerId} />
+            <Submit pendingLabel="Asking Meta…" variant="outline" size="sm">
+              Extend token
+            </Submit>
+          </form>
+        ) : null}
+      </div>
+
+      {hasToken ? (
+        <p className="text-xs text-muted-foreground">
+          Extending swaps this token for a non-expiring one. It only works while the current token
+          is still valid — once a token expires, Meta refuses every renewal path and a replacement
+          has to be generated from Facebook by hand. The nightly sweep does this automatically.
+        </p>
+      ) : null}
 
       <form action={replaceAction} className="space-y-3 border-t pt-6">
         <input type="hidden" name="id" value={streamerId} />

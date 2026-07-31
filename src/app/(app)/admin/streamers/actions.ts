@@ -13,6 +13,7 @@ import {
   requestManualSync,
   softDeleteStreamer,
   updateStreamer,
+  extendStreamerToken,
   validateStreamerToken,
 } from "@/lib/repositories/streamers";
 import { rollUpMetrics } from "@/lib/services/metric-rollup";
@@ -273,6 +274,55 @@ export async function validateTokenAction(
     status: outcome.data.validation.status === "valid" ? "success" : "error",
     message: outcome.data.validation.message,
     validation: outcome.data.validation,
+  };
+}
+
+/**
+ * Swap this streamer's token for a longer-lived one, in place.
+ *
+ * Worth doing well before expiry, because it only works while the current token
+ * is still valid. Once a token lapses every refresh path Meta offers answers
+ * `(190) Session has expired`, and the only remedy left is signing into
+ * Facebook to mint a new one by hand — which is what happened to one Page here.
+ */
+export async function extendTokenAction(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const actor = await requireActor();
+  if (isActionState(actor)) return actor;
+
+  const id = streamerIdSchema.safeParse(formData.get("id"));
+  if (!id.success) return { status: "error", message: "That streamer id is not valid." };
+
+  const outcome = await extendStreamerToken({ actorId: actor.id, id: id.data });
+  if (!outcome.ok) return { status: "error", message: outcome.message };
+
+  revalidatePath("/admin/streamers");
+  revalidatePath(`/admin/streamers/${id.data}`);
+
+  const extension = outcome.data.outcome;
+
+  if (extension.status === "extended") {
+    return {
+      status: "success",
+      message:
+        extension.expiresAt === null
+          ? "Token replaced with one that does not expire."
+          : `Token replaced. It now expires ${extension.expiresAt.toISOString().slice(0, 10)}.`,
+    };
+  }
+
+  // Already permanent is a good outcome, and should not read as a failure.
+  if (extension.status === "unchanged") {
+    return { status: "success", message: extension.reason };
+  }
+
+  return {
+    status: "error",
+    message: extension.needsReauthentication
+      ? `${extension.message} This token cannot be renewed from here — it has to be replaced with a new one from Facebook.`
+      : extension.message,
   };
 }
 

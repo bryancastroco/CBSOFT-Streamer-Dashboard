@@ -13,10 +13,12 @@ import {
   type SQL,
 } from "drizzle-orm";
 
+import { getServerEnv } from "@/config/env";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { encryptToken, decryptToken, lastFourOf, maskFromLastFour } from "@/lib/crypto/tokens";
 import { getDb } from "@/lib/db";
 import { auditLogs, streamers, syncRuns } from "@/lib/db/schema";
+import { extendPageToken, type TokenExtension } from "@/lib/meta/token-extension";
 import { validatePageToken } from "@/lib/meta/token-validation";
 import type { TokenStatus, TokenValidation } from "@/lib/meta/token-status";
 import type {
@@ -750,6 +752,121 @@ export async function validateStreamerToken(params: {
     });
 
     return { ok: true as const, data: { streamer: toView(updated), validation } };
+  });
+}
+
+/**
+ * Swap a stored Page token for a longer-lived one, in place.
+ *
+ * The only self-service remedy for token expiry that exists. Meta will hand
+ * back a non-expiring Page token when asked for the Page's own `access_token`
+ * field — but only while the current token still works, so this is worth
+ * running well before the deadline rather than at it.
+ *
+ * Idempotent by construction: a token that already has no expiry returns
+ * `unchanged` and nothing is written. That matters because this runs on every
+ * automation sweep, and rotating a credential nightly for no reason would bury
+ * the real rotations in audit noise.
+ *
+ * Note what is NOT recorded. The audit row carries both last-four suffixes so a
+ * rotation is traceable, and neither token. Nothing here returns plaintext to a
+ * caller either — the replacement goes straight into `encryptToken`.
+ */
+export async function extendStreamerToken(params: {
+  /** Null for a machine actor — an automation sweep has no user behind it. */
+  actorId: string | null;
+  id: string;
+}): Promise<
+  StreamerOutcome<{
+    streamer: StreamerView;
+    outcome: TokenExtension;
+  }>
+> {
+  const db = getDb();
+
+  const existing = await getStreamerById(params.id);
+  if (!existing) return fail("not_found", "That streamer no longer exists.");
+  if (existing.deletedAt) return fail("already_deleted", "That streamer has been deleted.");
+  if (!existing.hasToken) {
+    return fail("no_token", "This streamer has no Page token to extend. Add one first.");
+  }
+
+  const token = await loadTokenFor(params.id);
+  if (!token) return fail("no_token", "This streamer has no Page token to extend. Add one first.");
+
+  const env = getServerEnv();
+
+  const outcome = await extendPageToken({
+    token,
+    pageId: existing.pageId,
+    appId: env.META_APP_ID,
+    appSecret: env.META_APP_SECRET,
+  });
+
+  /*
+   * No token to rotate — but the record may still be wrong.
+   *
+   * `token_expires_at` is a cache written at the last validation, and it drifts:
+   * this roster had a Page whose column read "28 September" while Meta already
+   * treated the token as permanent. The UI kept counting down to a deadline
+   * that did not exist, and the sweep would have acted on it. Correcting the
+   * column is not a credential change, so it needs no audit entry — the token
+   * itself is untouched.
+   */
+  if (outcome.status !== "extended") {
+    const observed = outcome.status === "unchanged" ? outcome.expiresAt : undefined;
+
+    if (observed !== undefined && observed?.getTime() !== existing.tokenExpiresAt?.getTime()) {
+      const [corrected] = await db
+        .update(streamers)
+        .set({ tokenExpiresAt: observed, tokenLastValidatedAt: new Date() })
+        .where(eq(streamers.id, params.id))
+        .returning(PUBLIC_COLUMNS);
+
+      if (corrected) {
+        return { ok: true as const, data: { streamer: toView(corrected), outcome } };
+      }
+    }
+
+    return { ok: true as const, data: { streamer: existing, outcome } };
+  }
+
+  const encrypted = encryptToken(outcome.token);
+  const lastFour = lastFourOf(outcome.token);
+
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(streamers)
+      .set({
+        encryptedPageToken: encrypted,
+        pageTokenLastFour: lastFour,
+        tokenStatus: "valid",
+        tokenExpiresAt: outcome.expiresAt,
+        tokenLastValidatedAt: new Date(),
+        tokenValidationError: null,
+      })
+      .where(eq(streamers.id, params.id))
+      .returning(PUBLIC_COLUMNS);
+
+    if (!updated) return fail("not_found", "That streamer no longer exists.");
+
+    await tx.insert(auditLogs).values({
+      userId: params.actorId,
+      action: AUDIT_ACTIONS.tokenExtended,
+      entityType: AUDIT_ENTITY_TYPES.streamer,
+      entityId: params.id,
+      metadataJson: {
+        streamerCode: updated.streamerCode,
+        pageId: updated.pageId,
+        previousLastFour: existing.pageTokenLastFour,
+        lastFour,
+        previousExpiresAt: existing.tokenExpiresAt?.toISOString() ?? null,
+        // Null is the outcome worth having, and it should read as such.
+        newExpiresAt: outcome.expiresAt?.toISOString() ?? "never",
+      },
+    });
+
+    return { ok: true as const, data: { streamer: toView(updated), outcome } };
   });
 }
 
