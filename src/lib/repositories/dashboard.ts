@@ -379,7 +379,13 @@ export async function listRecentContent(
             id: videos.id,
             streamerId: videos.streamerId,
             streamerName: streamers.streamerName,
-            preview: videos.title,
+            /*
+             * Meta leaves `title` null on these, so the description is the
+             * only text there is. The videos list already falls back this way;
+             * without it every video rendered as "No text" on the dashboard
+             * while showing a title one page over.
+             */
+            preview: sql<string | null>`coalesce(${videos.title}, ${videos.description})`,
             permalinkUrl: videos.permalinkUrl,
             createdTime: videos.createdTime,
             sentiment: sql<string | null>`${commentSummaries.sentiment}::text`,

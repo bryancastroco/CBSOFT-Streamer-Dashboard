@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MetricCard, MetricGrid } from "@/components/data/metric-card";
 import { EmptyTableRow } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -37,13 +37,6 @@ function formatDuration(seconds: number | null): string {
   const rest = seconds % 60;
   return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
 }
-
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  succeeded: "default",
-  partial: "secondary",
-  failed: "destructive",
-  running: "outline",
-};
 
 const SYNC_TYPE_LABELS: Record<string, string> = {
   automation: "Automation",
@@ -171,7 +164,7 @@ function SyncLogTableRow({ run }: { run: SyncLogRow }) {
         )}
       </TableCell>
       <TableCell>
-        <Badge variant={STATUS_VARIANT[run.status] ?? "outline"}>{run.status}</Badge>
+        <StatusBadge domain="sync" status={run.status} />
       </TableCell>
       <TableCell className="text-right font-mono text-xs">
         {formatDuration(run.durationSeconds)}

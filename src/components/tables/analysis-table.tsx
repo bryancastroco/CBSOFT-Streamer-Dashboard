@@ -184,9 +184,9 @@ export function AnalysisTable({
                   <TableCell className="align-top">
                     <Link
                       href={href}
-                      className="line-clamp-2 max-w-sm text-sm font-medium underline-offset-4 hover:underline"
+                      className="block max-w-sm text-sm font-medium underline-offset-4 hover:underline"
                     >
-                      {contentLabel(item)}
+                      <span className="line-clamp-2">{contentLabel(item)}</span>
                     </Link>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       Published {formatWhen(item.contentCreatedAt)}

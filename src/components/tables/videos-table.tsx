@@ -109,9 +109,11 @@ export function VideosTable({
                 <TableCell className="align-top">
                   <Link
                     href={`/videos/${video.id}`}
-                    className="line-clamp-2 max-w-sm text-sm font-medium underline-offset-4 hover:underline"
+                    className="block max-w-sm text-sm font-medium underline-offset-4 hover:underline"
                   >
-                    {videoLabel(video.title, video.description)}
+                    <span className="line-clamp-2">
+                      {videoLabel(video.title, video.description)}
+                    </span>
                   </Link>
                   <p className="mt-1 text-xs whitespace-nowrap text-muted-foreground">
                     {formatWhen(video.createdTime)}

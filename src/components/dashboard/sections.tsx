@@ -64,6 +64,17 @@ export function MetricTile({
       ? ((value - previous) / previous) * 100
       : null;
 
+  /*
+   * A previous window existed and held nothing.
+   *
+   * There is no percentage to compute from zero, but silence is the wrong
+   * answer: with no data before the current window, every card renders bare
+   * and the comparison looks broken rather than inapplicable. Saying so costs
+   * one line and removes the ambiguity.
+   */
+  const noPriorActivity =
+    change === null && typeof previous === "number" && previous === 0 && (value ?? 0) > 0;
+
   const TrendIcon =
     change === null ? Minus : change > 0 ? TrendingUp : change < 0 ? TrendingDown : Minus;
 
@@ -121,6 +132,10 @@ export function MetricTile({
            * a total that quietly omits them would understate the truth while
            * looking authoritative.
            */}
+          {noPriorActivity ? (
+            <span className="text-muted-foreground">no activity in the previous period</span>
+          ) : null}
+
           {notReported && notReported > 0 ? (
             <span className="text-muted-foreground">{notReported} not reported</span>
           ) : null}

@@ -5,7 +5,6 @@ import { FileText, MessagesSquare, Video } from "lucide-react";
 import { CsvExportLink } from "@/components/data/csv-export-link";
 import { FilterBar } from "@/components/data/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
-import { PhaseNotice } from "@/components/layout/phase-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/guards";
@@ -129,12 +128,27 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </CardContent>
       </Card>
 
-      <PhaseNotice phase={8}>
-        These are direct downloads. The scheduled Google Sheets pipeline — where n8n pulls rows from{" "}
-        <code className="text-xs">/api/n8n/export</code> against the contract in{" "}
-        <code className="text-xs">src/lib/google-sheets/export-contract.ts</code> — is a later
-        phase.
-      </PhaseNotice>
+      {/*
+       * Was a "arrives in Phase 8" placeholder long after Phase 8 shipped. The
+       * pipeline it described exists and runs, so the notice was describing the
+       * product as less finished than it is — a stale promise is worse than no
+       * note at all.
+       */}
+      <Card className="shadow-none">
+        <CardContent className="space-y-1 p-4 text-sm text-muted-foreground">
+          <p>
+            These are direct downloads. The scheduled mirror into Google Sheets runs separately: n8n
+            pulls the same rows from <code className="text-xs">/api/automation/exports/…</code>{" "}
+            every six hours and upserts them tab by tab.
+          </p>
+          <p>
+            <Link href="/settings" className="underline underline-offset-4">
+              Settings
+            </Link>{" "}
+            shows the health of that pipeline, including the last successful export per dataset.
+          </p>
+        </CardContent>
+      </Card>
     </>
   );
 }
