@@ -15,6 +15,7 @@ import { SyncVideosPanel } from "@/app/(app)/admin/streamers/[id]/sync-videos-pa
 import { PageHeader } from "@/components/layout/page-header";
 import { TokenStatusBadge } from "@/components/admin/token-status-badge";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -234,9 +235,7 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
                 <li key={run.id} className="flex items-center justify-between gap-3 py-2">
                   <span className="text-xs text-muted-foreground">{formatWhen(run.startedAt)}</span>
                   <span className="text-xs">{run.syncType}</span>
-                  <Badge variant={run.status === "failed" ? "destructive" : "secondary"}>
-                    {run.status}
-                  </Badge>
+                  <StatusBadge domain="sync" status={run.status} />
                 </li>
               ))}
             </ul>

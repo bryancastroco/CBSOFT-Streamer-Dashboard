@@ -15,6 +15,7 @@ import { MetricCard, MetricGrid } from "@/components/data/metric-card";
 import { MetricCardSkeleton } from "@/components/data/states";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -183,9 +184,7 @@ async function ExportStatus({ sheetsEnabled }: { sheetsEnabled: boolean }) {
                       {formatWhen(row.lastRunAt)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={row.status === "failed" ? "destructive" : "secondary"}>
-                        {row.status}
-                      </Badge>
+                      <StatusBadge domain="export" status={row.status} />
                       {row.errorMessage ? (
                         <p className="mt-1 max-w-md text-xs text-muted-foreground">
                           {row.errorMessage}

@@ -166,12 +166,25 @@ export const SENTIMENT_STATUS: Record<string, StatusDescriptor> = {
   no_comments: { label: "No comments", tone: "neutral", icon: MessageSquareOff },
 };
 
-/** The four domains, so a caller names one rather than importing a table. */
+/**
+ * Outcome of a dataset export run.
+ *
+ * Its own domain rather than a reuse of the sync statuses: `export_status` is a
+ * two-value enum with no in-flight state, and borrowing the sync table would
+ * offer a caller four labels this column can never hold.
+ */
+export const EXPORT_STATUS: Record<string, StatusDescriptor> = {
+  succeeded: { label: "Succeeded", tone: "success", icon: CheckCircle2 },
+  failed: { label: "Failed", tone: "danger", icon: XCircle },
+};
+
+/** The domains, so a caller names one rather than importing a table. */
 export const STATUS_DOMAINS = {
   token: TOKEN_STATUS,
   sync: SYNC_STATUS,
   ai: AI_STATUS,
   sentiment: SENTIMENT_STATUS,
+  export: EXPORT_STATUS,
 } as const;
 
 export type StatusDomain = keyof typeof STATUS_DOMAINS;
