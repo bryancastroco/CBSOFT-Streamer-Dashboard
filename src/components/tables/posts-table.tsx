@@ -111,10 +111,16 @@ export function PostsTable({
                * who published it and when. The numeric columns are hidden below
                * `md` rather than reflowed, so one row stays one row.
                */}
-              <TableCell className="max-w-sm align-top">
+              {/*
+               * The width is constrained on the inner element, not the cell.
+               * A `max-width` on a `td` is ignored under the automatic table
+               * layout browsers use by default, so a long message simply grew
+               * the column until it ran under the streamer beside it.
+               */}
+              <TableCell className="align-top">
                 <Link
                   href={`/posts/${post.id}`}
-                  className="text-sm font-medium underline-offset-4 hover:underline"
+                  className="line-clamp-2 max-w-sm text-sm font-medium underline-offset-4 hover:underline"
                 >
                   {excerpt(post.message)}
                 </Link>

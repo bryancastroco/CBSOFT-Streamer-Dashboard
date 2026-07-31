@@ -177,10 +177,14 @@ export function AnalysisTable({
                     </span>
                   </TableCell>
 
-                  <TableCell className="max-w-sm align-top">
+                  {/*
+                   * Constrained on the inner element: a `max-width` on a `td`
+                   * is ignored under the automatic table layout.
+                   */}
+                  <TableCell className="align-top">
                     <Link
                       href={href}
-                      className="text-sm font-medium underline-offset-4 hover:underline"
+                      className="line-clamp-2 max-w-sm text-sm font-medium underline-offset-4 hover:underline"
                     >
                       {contentLabel(item)}
                     </Link>

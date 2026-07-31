@@ -37,10 +37,36 @@ export function Breadcrumbs({ className }: { className?: string }) {
 
   if (segments.length === 0) return null;
 
-  const crumbs = segments.map((segment, index) => {
-    const href = `/${segments.slice(0, index + 1).join("/")}`;
-    return { href, label: findNavItem(href)?.title ?? segment.replace(/-/g, " ") };
-  });
+  /*
+   * Record ids are dropped rather than shown.
+   *
+   * `/posts/<uuid>` used to render "Posts > Posts", because the nav lookup
+   * matches on prefix and happily resolved the id segment back to its parent.
+   * Showing the raw uuid instead would be worse — it is 36 characters of noise
+   * that names nothing to a reader — and the page's own heading already says
+   * which record this is. So the trail stops at the last segment that means
+   * something.
+   */
+  const isRecordId = (segment: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment) ||
+    /^\d{6,}$/.test(segment);
+
+  const crumbs = segments
+    .map((segment, index) => ({
+      segment,
+      href: `/${segments.slice(0, index + 1).join("/")}`,
+    }))
+    .filter(({ segment }) => !isRecordId(segment))
+    .map(({ segment, href }) => ({
+      href,
+      // Exact match only. A prefix match is what produced the duplicate.
+      label:
+        findNavItem(href)?.href === href
+          ? (findNavItem(href)?.title ?? segment)
+          : segment.replace(/-/g, " "),
+    }));
+
+  if (crumbs.length === 0) return null;
 
   return (
     <nav aria-label="Breadcrumb" className={cn("min-w-0", className)}>

@@ -101,10 +101,15 @@ export function VideosTable({
 
             return (
               <TableRow key={video.id}>
-                <TableCell className="max-w-sm align-top">
+                {/*
+                 * Constrained on the inner element: a `max-width` on a `td` is
+                 * ignored under the automatic table layout, so long titles grew
+                 * the column and ran under the one beside it.
+                 */}
+                <TableCell className="align-top">
                   <Link
                     href={`/videos/${video.id}`}
-                    className="text-sm font-medium underline-offset-4 hover:underline"
+                    className="line-clamp-2 max-w-sm text-sm font-medium underline-offset-4 hover:underline"
                   >
                     {videoLabel(video.title, video.description)}
                   </Link>

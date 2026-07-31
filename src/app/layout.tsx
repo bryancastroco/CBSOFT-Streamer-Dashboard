@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { site } from "@/config/site";
 import { resolveAppOrigin } from "@/lib/config/app-origin";
 
@@ -86,7 +87,21 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
-        <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
+        <ThemeProvider nonce={nonce}>
+          {/*
+           * Radix tooltips throw at render without a provider ancestor — not a
+           * warning, an exception that takes the whole page down. The dashboard
+           * renders eight of them, so it died on load; the collapsed sidebar
+           * would have done the same. It sits at the root because a tooltip is
+           * the kind of thing any screen adds later, and the failure mode is
+           * far too loud for the mistake to be worth repeating.
+           *
+           * `delayDuration` is a little longer than the Radix default: these
+           * explain a metric rather than name an icon, so firing them the
+           * instant a pointer crosses a card is noise.
+           */}
+          <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
