@@ -279,6 +279,121 @@ export function resolveMetrics(input: ResolveInput): ResolvedMetrics {
 }
 
 /**
+ * What a previous collection already established about one piece of content.
+ *
+ * Only the parts retention needs: the stored values, and the availability entry
+ * that explains where each came from.
+ */
+export type PreviousMetrics = {
+  values: Readonly<Partial<Record<CanonicalMetricKey, number | null>>>;
+  availability?: Readonly<Record<string, unknown>> | null;
+  sourceMapping?: Readonly<Record<string, unknown>> | null;
+};
+
+/** Availability entries carry at least a status; the rest varies by metric. */
+type AvailabilityEntry = { status?: string; sourceMetricName?: string | null };
+
+function entryFor(
+  availability: Readonly<Record<string, unknown>> | null | undefined,
+  key: CanonicalMetricKey,
+): AvailabilityEntry | null {
+  const raw = availability?.[key];
+  return typeof raw === "object" && raw !== null ? (raw as AvailabilityEntry) : null;
+}
+
+/**
+ * Keep a value Meta reported once and did not report again.
+ *
+ * ## Why this exists, given everything above says not to carry values over
+ *
+ * The rule that a metric is null unless Meta supplied it governs *resolution* —
+ * turning one collection into numbers. This governs *persistence*, which is a
+ * different question: a stored figure Meta gave us last week is not invented,
+ * and replacing it with null because a single request came back thin destroys
+ * real data and makes every trend look like a cliff. Meta drops metrics from
+ * individual responses routinely, and a rollup is re-run whenever the registry
+ * changes, so a clobbering write is not a hypothetical.
+ *
+ * Retention is never silent. The value keeps the availability status it earned
+ * when it was measured, and the entry gains `retained: true` plus the status
+ * this run actually produced, so a reader can always tell a fresh reading from
+ * a carried one — in the UI, in an export, and in the row itself.
+ *
+ * ## The one case that is not retained
+ *
+ * `not_applicable`. That verdict says the metric cannot apply to this content
+ * at all — the post is not a video, so a stored view count was wrong, not
+ * merely stale. Keeping it would preserve an error. Every other status means
+ * "we did not learn it this time", and the older reading stands.
+ */
+export function retainKnownValues(
+  resolved: ResolvedMetrics,
+  previous: PreviousMetrics | null | undefined,
+): { resolved: ResolvedMetrics; retained: CanonicalMetricKey[] } {
+  if (!previous) return { resolved, retained: [] };
+
+  const results = { ...resolved.results };
+  const availability = { ...resolved.availability };
+  const sourceMapping = { ...resolved.sourceMapping };
+  const retained: CanonicalMetricKey[] = [];
+
+  for (const key of CANONICAL_METRIC_KEYS) {
+    const fresh = results[key];
+
+    if (fresh.value !== null) continue;
+    if (fresh.availability === "not_applicable") continue;
+
+    const kept = previous.values[key];
+    if (kept === null || kept === undefined) continue;
+
+    const previousEntry = entryFor(previous.availability, key);
+    const previousStatus = previousEntry?.status;
+
+    /*
+     * Only a value that was itself measured or calculated may be retained. A
+     * stored number whose recorded status was already "unavailable" is not a
+     * reading to preserve — it is a contradiction worth letting go.
+     */
+    if (previousStatus !== "available" && previousStatus !== "calculated") continue;
+
+    results[key] = {
+      ...fresh,
+      value: kept,
+      availability: previousStatus,
+      source: previousStatus === "calculated" ? "calculated" : fresh.source,
+      sourceMetricName: previousEntry?.sourceMetricName ?? null,
+    };
+
+    availability[key] = {
+      ...(previousEntry ?? { status: previousStatus }),
+      retained: true,
+      // What this run found, so the gap is legible rather than papered over.
+      notReportedThisRun: fresh.availability,
+    };
+
+    const previousSource = previous.sourceMapping?.[key];
+    if (previousSource !== undefined) sourceMapping[key] = previousSource;
+
+    retained.push(key);
+  }
+
+  if (retained.length === 0) return { resolved, retained };
+
+  return {
+    resolved: {
+      ...resolved,
+      results,
+      availability,
+      sourceMapping,
+      // Over the merged values, so a retained row deduplicates against the
+      // snapshot it was retained from instead of writing a new one every sweep.
+      metricHash: hashMetrics(results),
+    },
+    retained,
+  };
+}
+
+/**
  * A hash over the metric values only.
  *
  * Deliberately excludes timestamps, endpoints and the API version. A snapshot

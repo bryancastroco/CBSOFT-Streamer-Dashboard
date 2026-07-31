@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { METRIC_REGISTRY, POST_INSIGHT_METRIC_NAMES } from "@/lib/metrics/registry";
-import { hashMetrics, resolveMetrics, toColumns } from "@/lib/metrics/resolve";
+import {
+  hashMetrics,
+  resolveMetrics,
+  retainKnownValues,
+  toColumns,
+} from "@/lib/metrics/resolve";
 
 /**
  * The canonical metric mapping, against the shapes Meta actually returns.
@@ -371,5 +376,93 @@ describe("errors found by running against production data", () => {
 
     expect(asTextPost.results.watch_time.availability).toBe("not_applicable");
     expect(asTextPost.results.views.availability).toBe("not_applicable");
+  });
+});
+
+describe("retaining a value Meta stopped reporting", () => {
+  /*
+   * Resolution and persistence answer different questions. Resolution says
+   * what one collection contained; retention says what the record should hold
+   * afterwards. A figure Meta gave us last week is not invented, and nulling it
+   * because one response came back thin destroys real data — so the pure rule
+   * is pinned here, separately from the service that applies it.
+   */
+  const thin = () =>
+    resolveMetrics({
+      applicability: "video_post",
+      postInsights: [{ metricName: "post_video_views", value: 2925, period: "lifetime" }],
+      ...base,
+    });
+
+  it("keeps a previously measured value and says it was retained", () => {
+    const merged = retainKnownValues(thin(), {
+      values: { viewers: 2925 },
+      availability: { viewers: { status: "available", sourceMetricName: "post_video_views_unique" } },
+    });
+
+    expect(merged.retained).toEqual(["viewers"]);
+    expect(merged.resolved.results.viewers.value).toBe(2925);
+    expect(merged.resolved.availability["viewers"]).toMatchObject({
+      retained: true,
+      notReportedThisRun: "unavailable",
+    });
+    // The provenance survives, so the value is still attributable to Meta.
+    expect(merged.resolved.results.viewers.sourceMetricName).toBe("post_video_views_unique");
+  });
+
+  it("never overwrites a value Meta did report", () => {
+    const merged = retainKnownValues(thin(), { values: { views: 11 } });
+
+    expect(merged.resolved.results.views.value).toBe(2925);
+    expect(merged.retained).not.toContain("views");
+  });
+
+  it("does not retain across a not_applicable verdict", () => {
+    const asTextPost = resolveMetrics({
+      applicability: "post",
+      postInsights: [],
+      ...base,
+    });
+
+    const merged = retainKnownValues(asTextPost, {
+      values: { views: 500 },
+      availability: { views: { status: "available" } },
+    });
+
+    // The content is not a video, so the stored figure was wrong about what it
+    // measured. Keeping it would preserve an error rather than a reading.
+    expect(merged.resolved.results.views.value).toBeNull();
+    expect(merged.retained).toEqual([]);
+  });
+
+  it("refuses to retain a stored number whose own status was unavailable", () => {
+    const merged = retainKnownValues(thin(), {
+      values: { viewers: 999 },
+      availability: { viewers: { status: "unavailable" } },
+    });
+
+    expect(merged.resolved.results.viewers.value).toBeNull();
+  });
+
+  it("rehashes over the merged values, so a retained row deduplicates", () => {
+    const previous = {
+      values: { viewers: 2925 },
+      availability: { viewers: { status: "available" } },
+    };
+
+    const merged = retainKnownValues(thin(), previous);
+
+    expect(merged.resolved.metricHash).not.toBe(thin().metricHash);
+    // Stable: retaining the same value twice must not write a second snapshot.
+    expect(retainKnownValues(thin(), previous).resolved.metricHash).toBe(
+      merged.resolved.metricHash,
+    );
+  });
+
+  it("is a no-op when there is nothing stored", () => {
+    const merged = retainKnownValues(thin(), null);
+
+    expect(merged.retained).toEqual([]);
+    expect(merged.resolved.metricHash).toBe(thin().metricHash);
   });
 });
