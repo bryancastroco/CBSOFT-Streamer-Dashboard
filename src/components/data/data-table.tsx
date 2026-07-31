@@ -34,9 +34,18 @@ export type ColumnPriority = "primary" | "secondary" | "tertiary";
 export type Column<Row> = {
   /** Stable key, also used for the React key. */
   id: string;
-  header: string;
-  /** Hidden header text for an actions column. */
+  /**
+   * Header content. A plain string for a static column, or a `SortLink` for a
+   * sortable one — the cell itself is rendered here, so a sort control must
+   * not bring its own `<th>`.
+   */
+  header: React.ReactNode;
+  /** Spoken name, needed when `header` is markup or the column is icon-only. */
+  headerLabel?: string;
+  /** Hides the header visually while keeping `headerLabel` for assistive tech. */
   headerHidden?: boolean;
+  /** Set on a sortable column so the ordering is announced, not just drawn. */
+  ariaSort?: "none" | "ascending" | "descending";
   priority?: ColumnPriority;
   align?: "left" | "right";
   cell: (row: Row) => React.ReactNode;
@@ -86,6 +95,7 @@ export function DataTable<Row>({
                 <th
                   key={column.id}
                   scope="col"
+                  {...(column.ariaSort ? { "aria-sort": column.ariaSort } : {})}
                   className={cn(
                     "px-3 py-2 font-medium first:pl-0 last:pr-0",
                     column.align === "right" && "text-right",
@@ -93,7 +103,7 @@ export function DataTable<Row>({
                   )}
                 >
                   {column.headerHidden ? (
-                    <span className="sr-only">{column.header}</span>
+                    <span className="sr-only">{column.headerLabel ?? column.header}</span>
                   ) : (
                     column.header
                   )}

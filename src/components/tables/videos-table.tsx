@@ -1,26 +1,28 @@
 import Link from "next/link";
-import { Eye, ExternalLink } from "lucide-react";
+import { ExternalLink, Eye } from "lucide-react";
 
 import { SentimentBadge, SummaryStatusBadge } from "@/components/data/analysis-badges";
-import { SortableHeader } from "@/components/data/sortable-header";
-import { EmptyTableRow } from "@/components/data/states";
-import { Button } from "@/components/ui/button";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ActionsMenu,
+  ContentPreview,
+  DataTable,
+  MetricCell,
+  MobileDataCard,
+  type Column,
+} from "@/components/data/data-table";
+import { SortLink } from "@/components/data/sortable-header";
+import { EmptyState } from "@/components/layout/states";
+import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import type { BrowseQuery } from "@/lib/filters/browse";
-import type { SortState, VideoSortKey } from "@/lib/filters/sorting";
+import { ariaSortFor, type SortState, type VideoSortKey } from "@/lib/filters/sorting";
 import { formatDuration } from "@/lib/meta/videos";
 import type { VideoTableItem } from "@/lib/repositories/videos";
 
 /**
  * The videos table, used by `/videos` and by the Videos tab of a streamer.
- * Same reasoning as `posts-table.tsx`: one implementation, rows as props.
+ * Same reasoning as `posts-table.tsx`: one implementation, rows as props, and
+ * cards rather than a shrinking table below `md`.
  */
 
 export const VIDEOS_DEFAULT_SORT: SortState<VideoSortKey> = {
@@ -36,11 +38,19 @@ function formatWhen(value: Date): string {
   }).format(value);
 }
 
-function videoLabel(title: string | null, description: string | null, limit = 100): string {
+/**
+ * What to call a video.
+ *
+ * Meta leaves `title` null on plenty of these — every one in the current data
+ * set — so the description is usually the only text there is. Returning null
+ * rather than a placeholder lets `ContentPreview` supply the "Untitled video"
+ * wording, keeping that phrase in one place across the product.
+ */
+function videoLabel(title: string | null, description: string | null, limit = 120): string | null {
   const source = title ?? description;
-  if (!source) return "Untitled video";
+  if (!source) return null;
   const trimmed = source.replace(/\s+/g, " ").trim();
-  if (trimmed.length === 0) return "Untitled video";
+  if (trimmed.length === 0) return null;
   return trimmed.length > limit ? `${trimmed.slice(0, limit)}…` : trimmed;
 }
 
@@ -57,160 +67,210 @@ export function VideosTable({
   showStreamer?: boolean;
   empty: { title: string; description: string; action?: { label: string; href: string } };
 }) {
-  const columnCount = showStreamer ? 8 : 7;
-
-  const header = (label: string, column: VideoSortKey, align?: "right", hideBelow?: string) => (
-    <SortableHeader
+  const sortable = (label: string, column: VideoSortKey) => (
+    <SortLink
       label={label}
       column={column}
       query={query}
       basePath={basePath}
       defaultSort={VIDEOS_DEFAULT_SORT}
-      {...(align ? { align } : {})}
-      {...(hideBelow ? { className: hideBelow } : {})}
       naturalDirection={column === "streamer" || column === "title" ? "asc" : "desc"}
     />
   );
 
+  const sortState = (column: VideoSortKey) => ariaSortFor(column, query.sort);
+
+  const actionsFor = (video: VideoTableItem) => (
+    <>
+      <DropdownMenuItem asChild>
+        <Link href={`/videos/${video.id}`}>
+          <Eye className="size-4" aria-hidden />
+          View details
+        </Link>
+      </DropdownMenuItem>
+      {video.permalinkUrl ? (
+        <DropdownMenuItem asChild>
+          <a href={video.permalinkUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="size-4" aria-hidden />
+            Open on Facebook
+          </a>
+        </DropdownMenuItem>
+      ) : null}
+    </>
+  );
+
+  const columns: Column<VideoTableItem>[] = [
+    {
+      id: "title",
+      header: sortable("Title", "title"),
+      headerLabel: "Title",
+      ariaSort: sortState("title"),
+      cell: (video) => (
+        <div className="min-w-0 space-y-1">
+          <ContentPreview
+            contentType="video"
+            title={videoLabel(video.title, video.description)}
+            permalinkUrl={video.permalinkUrl}
+            href={`/videos/${video.id}`}
+          />
+          <p className="text-xs whitespace-nowrap text-muted-foreground">
+            {formatWhen(video.createdTime)}
+          </p>
+        </div>
+      ),
+    },
+    ...(showStreamer
+      ? [
+          {
+            id: "streamer",
+            header: sortable("Streamer", "streamer"),
+            headerLabel: "Streamer",
+            ariaSort: sortState("streamer"),
+            priority: "secondary" as const,
+            cell: (video: VideoTableItem) => (
+              <>
+                <Link
+                  href={`/streamers/${video.streamerId}`}
+                  className="text-sm underline-offset-4 hover:underline"
+                >
+                  {video.streamerName}
+                </Link>
+                <p className="font-mono text-xs text-muted-foreground">{video.streamerCode}</p>
+              </>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "length",
+      header: sortable("Length", "length"),
+      headerLabel: "Length",
+      ariaSort: sortState("length"),
+      align: "right",
+      cell: (video) => {
+        const duration = formatDuration(video.lengthSeconds);
+        return duration ? (
+          <span className="tabular-nums">{duration}</span>
+        ) : (
+          <span className="text-muted-foreground" title="Not available from Meta">
+            —<span className="sr-only">Not available from Meta</span>
+          </span>
+        );
+      },
+    },
+    {
+      id: "metrics",
+      header: sortable("Metrics", "metrics"),
+      headerLabel: "Metrics",
+      ariaSort: sortState("metrics"),
+      align: "right",
+      priority: "secondary",
+      cell: (video) =>
+        video.metricCount > 0 ? (
+          <Link
+            href={`/videos/${video.id}`}
+            className="underline-offset-4 hover:underline"
+            aria-label={`${video.metricCount} insight metrics available`}
+          >
+            {video.metricCount}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground" title="No insight metrics stored">
+            —
+          </span>
+        ),
+    },
+    {
+      id: "comments",
+      header: sortable("Comments", "comments"),
+      headerLabel: "Comments",
+      ariaSort: sortState("comments"),
+      align: "right",
+      priority: "secondary",
+      cell: (video) => <MetricCell value={video.storedCommentCount} />,
+    },
+    {
+      id: "sentiment",
+      header: sortable("Sentiment", "sentiment"),
+      headerLabel: "Sentiment",
+      ariaSort: sortState("sentiment"),
+      cell: (video) => <SentimentBadge sentiment={video.sentiment} />,
+    },
+    {
+      id: "summary",
+      header: sortable("Summary", "summaryStatus"),
+      headerLabel: "Summary",
+      ariaSort: sortState("summaryStatus"),
+      priority: "tertiary",
+      cell: (video) => <SummaryStatusBadge status={video.summaryStatus} />,
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      headerLabel: "Actions",
+      headerHidden: true,
+      align: "right",
+      cell: (video) => <ActionsMenu label="Video actions">{actionsFor(video)}</ActionsMenu>,
+    },
+  ];
+
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <caption className="sr-only">
-          Facebook Page videos with duration, available insight metrics and comment-analysis status.
-          Sortable by column.
-        </caption>
-        <TableHeader>
-          <TableRow>
-            {header("Title", "title")}
-            {showStreamer
-              ? header("Streamer", "streamer", undefined, "hidden md:table-cell")
-              : null}
-            {header("Length", "length", "right", "hidden md:table-cell")}
-            {header("Metrics", "metrics", "right", "hidden lg:table-cell")}
-            {header("Comments", "comments", "right", "hidden lg:table-cell")}
-            {header("Sentiment", "sentiment", undefined, "hidden sm:table-cell")}
-            {header("Summary", "summaryStatus", undefined, "hidden sm:table-cell")}
-            <TableHead scope="col" className="text-right">
-              <span className="sr-only">Actions</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((video) => {
-            const duration = formatDuration(video.lengthSeconds);
+    <DataTable
+      rows={items}
+      columns={columns}
+      rowKey={(video) => video.id}
+      caption="Page videos with duration, stored insight metrics and comment-analysis status. Sortable by column."
+      empty={
+        <EmptyState
+          title={empty.title}
+          description={empty.description}
+          actions={
+            empty.action ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={empty.action.href}>{empty.action.label}</Link>
+              </Button>
+            ) : undefined
+          }
+        />
+      }
+      mobileCard={(video) => (
+        <MobileDataCard>
+          <ContentPreview
+            contentType="video"
+            title={videoLabel(video.title, video.description)}
+            subtitle={showStreamer ? video.streamerName : null}
+            permalinkUrl={video.permalinkUrl}
+            href={`/videos/${video.id}`}
+          />
 
-            return (
-              <TableRow key={video.id}>
-                {/*
-                 * Constrained on the inner element: a `max-width` on a `td` is
-                 * ignored under the automatic table layout, so long titles grew
-                 * the column and ran under the one beside it.
-                 */}
-                <TableCell className="align-top">
-                  <Link
-                    href={`/videos/${video.id}`}
-                    className="block max-w-[calc(100vw-5rem)] text-sm font-medium underline-offset-4 hover:underline sm:max-w-sm"
-                  >
-                    <span className="line-clamp-2">
-                      {videoLabel(video.title, video.description)}
-                    </span>
-                  </Link>
-                  <p className="mt-1 text-xs whitespace-nowrap text-muted-foreground">
-                    {formatWhen(video.createdTime)}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground md:hidden">
-                    {showStreamer ? video.streamerCode : ""}
-                    {duration ? `${showStreamer ? " · " : ""}${duration}` : ""}
-                  </p>
-                </TableCell>
+          <p className="text-xs text-muted-foreground">{formatWhen(video.createdTime)}</p>
 
-                {showStreamer ? (
-                  <TableCell className="hidden align-top md:table-cell">
-                    <Link
-                      href={`/streamers/${video.streamerId}`}
-                      className="text-sm underline-offset-4 hover:underline"
-                    >
-                      {video.streamerName}
-                    </Link>
-                    <p className="font-mono text-xs text-muted-foreground">{video.streamerCode}</p>
-                  </TableCell>
-                ) : null}
+          <dl className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+            <div>
+              <dt>Length</dt>
+              <dd className="text-foreground">{formatDuration(video.lengthSeconds) ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Metrics</dt>
+              <dd className="text-foreground">{video.metricCount || "—"}</dd>
+            </div>
+            <div>
+              <dt>Comments</dt>
+              <dd className="text-foreground">
+                <MetricCell value={video.storedCommentCount} />
+              </dd>
+            </div>
+          </dl>
 
-                <TableCell className="hidden text-right align-top font-mono text-xs md:table-cell">
-                  {/* A null length is reported as unavailable, never as 0s. */}
-                  {duration ?? (
-                    <span className="text-muted-foreground" title="Length not reported by Meta">
-                      —
-                    </span>
-                  )}
-                </TableCell>
-
-                <TableCell className="hidden text-right align-top font-mono text-xs lg:table-cell">
-                  {video.metricCount > 0 ? (
-                    <Link
-                      href={`/videos/${video.id}`}
-                      className="underline-offset-4 hover:underline"
-                      aria-label={`${video.metricCount} insight metrics available`}
-                    >
-                      {video.metricCount}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground" title="No insight metrics stored">
-                      —
-                    </span>
-                  )}
-                </TableCell>
-
-                <TableCell className="hidden text-right align-top font-mono text-xs lg:table-cell">
-                  {video.storedCommentCount ?? (
-                    <span className="text-muted-foreground" title="No comments collected yet">
-                      —
-                    </span>
-                  )}
-                </TableCell>
-
-                <TableCell className="hidden align-top sm:table-cell">
-                  <SentimentBadge sentiment={video.sentiment} />
-                </TableCell>
-                <TableCell className="hidden align-top sm:table-cell">
-                  <SummaryStatusBadge status={video.summaryStatus} />
-                </TableCell>
-
-                <TableCell className="text-right align-top whitespace-nowrap">
-                  <div className="inline-flex items-center gap-1">
-                    <Button asChild variant="ghost" size="icon-sm">
-                      <Link href={`/videos/${video.id}`} aria-label="View video details">
-                        <Eye className="size-4" aria-hidden />
-                      </Link>
-                    </Button>
-                    {video.permalinkUrl ? (
-                      <Button asChild variant="ghost" size="icon-sm">
-                        <a
-                          href={video.permalinkUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label="Open on Facebook"
-                        >
-                          <ExternalLink className="size-4" aria-hidden />
-                        </a>
-                      </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-
-          {items.length === 0 ? (
-            <EmptyTableRow
-              colSpan={columnCount}
-              title={empty.title}
-              description={empty.description}
-              {...(empty.action ? { action: empty.action } : {})}
-            />
-          ) : null}
-        </TableBody>
-      </Table>
-    </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SentimentBadge sentiment={video.sentiment} />
+            <SummaryStatusBadge status={video.summaryStatus} />
+            <div className="ml-auto">
+              <ActionsMenu label="Video actions">{actionsFor(video)}</ActionsMenu>
+            </div>
+          </div>
+        </MobileDataCard>
+      )}
+    />
   );
 }
