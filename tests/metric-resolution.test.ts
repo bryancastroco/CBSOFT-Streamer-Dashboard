@@ -312,3 +312,64 @@ describe("nothing leaks into the metric columns", () => {
     }
   });
 });
+
+/**
+ * Two mapping errors that only surfaced when the resolver was run against the
+ * live database. Fixtures had not caught either, because both depended on what
+ * Meta actually sends rather than on what the shapes allow.
+ */
+describe("errors found by running against production data", () => {
+  it("does not source interactions from post_video_social_actions", () => {
+    /*
+     * That metric returns {SHARE, COMMENT} — no reactions. Summing it as an
+     * interactions total produced 6 on a real video whose likes alone were 28,
+     * understating engagement by about eighty per cent.
+     */
+    const names = METRIC_REGISTRY.interactions.candidates.map((c) => c.metric);
+
+    expect(names).not.toContain("post_video_social_actions");
+  });
+
+  it("still reaches an interactions figure for a video, by calculating it", () => {
+    const resolved = resolveMetrics({
+      applicability: "video",
+      videoInsights: [
+        {
+          metricName: "post_video_likes_by_reaction_type",
+          value: { REACTION_LIKE: 28, REACTION_LOVE: 8 },
+          period: "lifetime",
+        },
+        {
+          metricName: "post_video_social_actions",
+          value: { SHARE: 2, COMMENT: 4 },
+          period: "lifetime",
+        },
+      ],
+      ...base,
+    });
+
+    // 36 reactions + 4 comments + 2 shares, and labelled as calculated.
+    expect(resolved.results.interactions.value).toBe(42);
+    expect(resolved.results.interactions.availability).toBe("calculated");
+  });
+
+  it("treats post_video_views of zero as a text post, not a silent video", () => {
+    /*
+     * Meta returns `post_video_views: 0` for ordinary posts rather than
+     * omitting it. Testing for the metric's presence classified every post in
+     * the roster as a video post, so video metrics read as "not reported"
+     * instead of "not applicable" — a different and wrong claim.
+     *
+     * The check lives in the rollup service; this pins the consequence, which
+     * is what a reader of the dashboard actually sees.
+     */
+    const asTextPost = resolveMetrics({
+      applicability: "post",
+      postInsights: [{ metricName: "post_video_views", value: 0, period: "lifetime" }],
+      ...base,
+    });
+
+    expect(asTextPost.results.watch_time.availability).toBe("not_applicable");
+    expect(asTextPost.results.views.availability).toBe("not_applicable");
+  });
+});

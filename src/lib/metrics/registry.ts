@@ -192,12 +192,14 @@ export const METRIC_REGISTRY: Record<CanonicalMetricKey, CanonicalMetricDefiniti
         endpoint: POST_INSIGHTS,
         extract: { kind: "sum_object" },
       },
-      {
-        metric: "post_video_social_actions",
-        source: "video_insight",
-        endpoint: VIDEO_INSIGHTS,
-        extract: { kind: "sum_object" },
-      },
+      /*
+       * `post_video_social_actions` is deliberately absent. It returns
+       * `{SHARE, COMMENT}` — shares and comments only — so summing it as an
+       * interactions total omits every reaction. On a real video here that
+       * produced 6 against 28 likes alone, understating engagement by around
+       * eighty per cent. A video with no official total falls through to the
+       * calculated formula instead, which at least says what it is.
+       */
     ],
   },
 
