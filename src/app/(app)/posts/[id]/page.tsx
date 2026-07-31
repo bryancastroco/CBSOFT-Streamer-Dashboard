@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 
-import { PageHeader } from "@/components/layout/page-header";
+import { PageHeader, SectionHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +17,10 @@ import {
 } from "@/components/ui/table";
 import { CommentActions } from "@/app/(app)/posts/[id]/comment-actions";
 import { CommentAnalysis } from "@/components/admin/comment-analysis";
+import { ContentMetricGroups } from "@/components/metrics/metric-group";
 import { requireUser } from "@/lib/auth/guards";
 import { METRIC_NOT_AVAILABLE, describeInsights, formatCount } from "@/lib/meta/insight-display";
+import { applicabilityOf, getPostMetrics } from "@/lib/repositories/canonical-metrics";
 import { getSummaryForPost } from "@/lib/repositories/comments";
 import { getPostById } from "@/lib/repositories/posts";
 import { postIdSchema } from "@/lib/validation/posts";
@@ -78,7 +80,10 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
   const post = await getPostById(parsed.data);
   if (!post) notFound();
 
-  const summary = await getSummaryForPost(post.id);
+  const [summary, metrics] = await Promise.all([
+    getSummaryForPost(post.id),
+    getPostMetrics(post.id),
+  ]);
   const isAdmin = user.role === "admin";
 
   const insights = describeInsights(post.insights);
@@ -125,6 +130,35 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
         </CardContent>
       </Card>
 
+      {metrics ? (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Performance"
+            description={`Canonical metrics, resolved from what Meta returned. Collected ${formatWhen(metrics.lastCollectedAt)} on Graph ${metrics.graphApiVersion}.`}
+          />
+          <ContentMetricGroups
+            metrics={metrics}
+            applicability={applicabilityOf(metrics, "post")}
+            showSource={isAdmin}
+          />
+        </section>
+      ) : (
+        /*
+         * A real state, not an error. Content can be synced without having been
+         * rolled up, and rendering zeroes here would be a claim about a post
+         * nobody has processed.
+         */
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Performance</CardTitle>
+            <CardDescription>
+              This post has not been processed into canonical metrics yet. Its raw insights are
+              below, exactly as Meta returned them.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Engagement</CardTitle>
@@ -133,14 +167,16 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <CountTile label="Reactions" value={post.reactionCount} />
+            <CountTile label="Likes" value={post.likeCount} />
             <CountTile label="Comments" value={post.commentCount} />
             <CountTile label="Shares" value={post.shareCount} />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             Meta omits <code>shares</code> entirely for a post with none, so an unavailable share
-            count is not the same as zero shares.
+            count is not the same as zero shares. Likes are LIKE reactions only — a subset of
+            reactions, and blank on posts synced before that field was requested.
           </p>
         </CardContent>
       </Card>

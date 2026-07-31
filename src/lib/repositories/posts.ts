@@ -39,6 +39,7 @@ export type PostListItem = {
   createdTime: Date;
   permalinkUrl: string | null;
   reactionCount: number | null;
+  likeCount: number | null;
   commentCount: number | null;
   shareCount: number | null;
   lastSyncedAt: Date;
@@ -64,6 +65,7 @@ const LIST_COLUMNS = {
   createdTime: posts.createdTime,
   permalinkUrl: posts.permalinkUrl,
   reactionCount: posts.reactionCount,
+  likeCount: posts.likeCount,
   commentCount: posts.commentCount,
   shareCount: posts.shareCount,
   lastSyncedAt: posts.lastSyncedAt,

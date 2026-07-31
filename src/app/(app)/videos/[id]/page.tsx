@@ -5,7 +5,8 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 
 import { VideoCommentActions } from "@/app/(app)/videos/[id]/comment-actions";
 import { CommentAnalysis } from "@/components/admin/comment-analysis";
-import { PageHeader } from "@/components/layout/page-header";
+import { ContentMetricGroups } from "@/components/metrics/metric-group";
+import { PageHeader, SectionHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import {
 import { requireUser } from "@/lib/auth/guards";
 import { METRIC_NOT_AVAILABLE, describeInsights } from "@/lib/meta/insight-display";
 import { formatDuration } from "@/lib/meta/videos";
+import { applicabilityOf, getVideoMetrics } from "@/lib/repositories/canonical-metrics";
 import { countCommentsForContent, getSummaryForVideo } from "@/lib/repositories/comments";
 import { getVideoById } from "@/lib/repositories/videos";
 import { videoIdSchema } from "@/lib/validation/videos";
@@ -65,9 +67,10 @@ export default async function VideoDetailPage({ params }: { params: Promise<{ id
 
   const content = { type: "video" as const, id: video.id };
 
-  const [summary, commentCount] = await Promise.all([
+  const [summary, commentCount, metrics] = await Promise.all([
     getSummaryForVideo(video.id),
     countCommentsForContent(content),
+    getVideoMetrics(video.id),
   ]);
 
   const isAdmin = user.role === "admin";
@@ -99,6 +102,30 @@ export default async function VideoDetailPage({ params }: { params: Promise<{ id
           </div>
         }
       />
+
+      {metrics ? (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Performance"
+            description={`Canonical metrics, resolved from what Meta returned. Collected ${formatWhen(metrics.lastCollectedAt)} on Graph ${metrics.graphApiVersion}.`}
+          />
+          <ContentMetricGroups
+            metrics={metrics}
+            applicability={applicabilityOf(metrics, "video")}
+            showSource={isAdmin}
+          />
+        </section>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Performance</CardTitle>
+            <CardDescription>
+              This video has not been processed into canonical metrics yet. Its raw insights are
+              below, exactly as Meta returned them.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

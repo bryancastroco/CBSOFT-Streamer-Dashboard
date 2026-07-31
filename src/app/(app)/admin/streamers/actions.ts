@@ -5,6 +5,7 @@ import type { ActionState } from "@/lib/forms/action-state";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getServerEnv } from "@/config/env";
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
 import {
   createStreamer,
@@ -14,6 +15,7 @@ import {
   updateStreamer,
   validateStreamerToken,
 } from "@/lib/repositories/streamers";
+import { rollUpMetrics } from "@/lib/services/metric-rollup";
 import { syncStreamerPosts } from "@/lib/services/sync-posts";
 import { syncStreamerVideos } from "@/lib/services/sync-videos";
 import {
@@ -301,6 +303,26 @@ export async function syncPostsAction(
 
   const { result } = outcome;
 
+  /*
+   * Roll the new insights into canonical metrics before revalidating.
+   *
+   * Without it the dashboard and every detail page keep showing the previous
+   * rollup's numbers while the raw insights underneath are current — stale in a
+   * way nothing on screen would indicate. Scoped to this streamer, reads stored
+   * insights only, and spends no Meta quota.
+   *
+   * A rollup failure never fails the sync: the content was collected, and
+   * saying otherwise would be wrong about work that succeeded.
+   */
+  try {
+    await rollUpMetrics({
+      streamerId: id.data,
+      graphApiVersion: getServerEnv().META_GRAPH_API_VERSION,
+    });
+  } catch {
+    // Recoverable by re-running the rollup; the sync itself stands.
+  }
+
   revalidatePath("/admin/streamers");
   revalidatePath(`/admin/streamers/${id.data}`);
   revalidatePath("/posts");
@@ -352,6 +374,26 @@ export async function syncVideosAction(
   if (!outcome.ok) return { status: "error", message: outcome.message };
 
   const { result } = outcome;
+
+  /*
+   * Roll the new insights into canonical metrics before revalidating.
+   *
+   * Without it the dashboard and every detail page keep showing the previous
+   * rollup's numbers while the raw insights underneath are current — stale in a
+   * way nothing on screen would indicate. Scoped to this streamer, reads stored
+   * insights only, and spends no Meta quota.
+   *
+   * A rollup failure never fails the sync: the content was collected, and
+   * saying otherwise would be wrong about work that succeeded.
+   */
+  try {
+    await rollUpMetrics({
+      streamerId: id.data,
+      graphApiVersion: getServerEnv().META_GRAPH_API_VERSION,
+    });
+  } catch {
+    // Recoverable by re-running the rollup; the sync itself stands.
+  }
 
   revalidatePath("/admin/streamers");
   revalidatePath(`/admin/streamers/${id.data}`);

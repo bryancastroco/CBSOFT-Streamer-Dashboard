@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   listRecentPostIdsForStreamer: vi.fn(),
   listRecentVideoIdsForStreamer: vi.fn(),
   recordAuditLogSafe: vi.fn(),
+  rollUpMetrics: vi.fn(),
   closedRuns: [] as { status: string; message: string | null; totals: unknown }[],
 }));
 
@@ -53,6 +54,15 @@ vi.mock("@/lib/repositories/videos", () => ({
 vi.mock("@/lib/services/sync-posts", () => ({ syncStreamerPosts: mocks.syncStreamerPosts }));
 vi.mock("@/lib/services/sync-videos", () => ({ syncStreamerVideos: mocks.syncStreamerVideos }));
 vi.mock("@/lib/services/sync-comments", () => ({ syncContentComments: mocks.syncContentComments }));
+/*
+ * The sweep's final step per streamer is rolling that streamer's new insights
+ * into canonical metrics. Stubbed because this suite is about orchestration —
+ * but stubbed deliberately rather than left out: an unstubbed rollup reaches
+ * for a database, throws, and downgrades every streamer to
+ * `completed_with_errors`, which these tests would then faithfully report as
+ * the sweep's behaviour.
+ */
+vi.mock("@/lib/services/metric-rollup", () => ({ rollUpMetrics: mocks.rollUpMetrics }));
 vi.mock("@/lib/audit/log", () => ({ recordAuditLogSafe: mocks.recordAuditLogSafe }));
 
 /**
@@ -159,6 +169,7 @@ beforeEach(() => {
   mocks.listRecentPostIdsForStreamer.mockResolvedValue([]);
   mocks.listRecentVideoIdsForStreamer.mockResolvedValue([]);
   mocks.recordAuditLogSafe.mockResolvedValue(undefined);
+  mocks.rollUpMetrics.mockResolvedValue({ processed: 0, succeeded: 0, failed: 0 });
 });
 
 afterEach(() => {

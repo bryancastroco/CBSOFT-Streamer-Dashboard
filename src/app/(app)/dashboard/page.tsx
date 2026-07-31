@@ -25,6 +25,7 @@ import {
   TokenHealth,
   UrgentIssues,
 } from "@/components/dashboard/sections";
+import { AggregateMetricGroups } from "@/components/metrics/metric-group";
 import { FilterBar } from "@/components/data/filter-bar";
 import { PageHeader, SectionHeader } from "@/components/layout/page-header";
 import { CardSkeleton, EmptyState, TableSkeleton } from "@/components/layout/states";
@@ -43,6 +44,7 @@ import {
   listUrgentIssues,
   type DashboardFilters,
 } from "@/lib/repositories/dashboard";
+import { getMetricTotals } from "@/lib/repositories/canonical-metrics";
 import { getSyncLogTotals, listSyncLogs } from "@/lib/repositories/sync-logs";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 
@@ -247,6 +249,41 @@ async function Sentiment({ params }: { params: RawParams }) {
   );
 }
 
+/**
+ * The canonical metrics, grouped.
+ *
+ * Reads `content_metrics_current` rather than resolving anything: the numbers
+ * here are the numbers the rollup stored, with the provenance stored beside
+ * them. Every total carries its own denominator, because a sum over the subset
+ * Meta happened to report is not the roster's figure.
+ */
+async function CanonicalMetrics({ params }: { params: RawParams }) {
+  const filters = filtersFrom(params);
+
+  const totals = await getMetricTotals({
+    streamerId: filters.streamerId,
+    period: filters.period,
+    ...(filters.scope === "posts"
+      ? { contentType: "post" as const }
+      : filters.scope === "videos"
+        ? { contentType: "video" as const }
+        : {}),
+  });
+
+  if (totals.contentCount === 0) {
+    return (
+      <EmptyState
+        title="No performance metrics yet"
+        description="Nothing in this period has been processed into metrics. Run a sync, then a metric rollup."
+      />
+    );
+  }
+
+  return (
+    <AggregateMetricGroups metrics={totals.metrics} withoutMetrics={totals.withoutMetrics} />
+  );
+}
+
 async function Operations({ params, isAdmin }: { params: RawParams; isAdmin: boolean }) {
   const filters = filtersFrom(params);
 
@@ -348,6 +385,16 @@ export default async function DashboardPage({
       <Suspense key={`m-${key}`} fallback={<CardSkeleton count={8} />}>
         <Metrics params={params} />
       </Suspense>
+
+      <section className="space-y-3">
+        <SectionHeader
+          title="Performance metrics"
+          description="Meta's own figures, grouped. Each total says how much of the content it covers — a metric Meta did not report is excluded, never counted as zero."
+        />
+        <Suspense key={`c-${key}`} fallback={<CardSkeleton count={3} />}>
+          <CanonicalMetrics params={params} />
+        </Suspense>
+      </section>
 
       <section className="space-y-3">
         <SectionHeader title="Performance overview" />

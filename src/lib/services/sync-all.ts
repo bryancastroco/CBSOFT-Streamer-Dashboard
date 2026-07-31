@@ -17,6 +17,7 @@ import {
   type StreamerOption,
 } from "@/lib/repositories/streamers";
 import { listRecentVideoIdsForStreamer } from "@/lib/repositories/videos";
+import { rollUpMetrics } from "@/lib/services/metric-rollup";
 import { syncContentComments } from "@/lib/services/sync-comments";
 import { syncStreamerPosts } from "@/lib/services/sync-posts";
 import { syncStreamerVideos } from "@/lib/services/sync-videos";
@@ -123,6 +124,8 @@ export type StreamerSweepResult = {
   video_insights_written: number;
   comments_processed: number;
   summaries_generated: number;
+  /** Content items whose canonical metrics were refreshed after the sync. */
+  metrics_rolled_up: number;
   /** Sanitised. Never a raw Meta payload. */
   errors: { step: string; message: string; category?: string }[];
 };
@@ -314,6 +317,7 @@ export async function runSyncAll(params: {
         video_insights_written: 0,
         comments_processed: 0,
         summaries_generated: 0,
+        metrics_rolled_up: 0,
         errors: [{ step: "streamer", message }],
       });
     }
@@ -429,6 +433,7 @@ async function sweepStreamer(
     video_insights_written: 0,
     comments_processed: 0,
     summaries_generated: 0,
+    metrics_rolled_up: 0,
     errors: [],
   };
 
@@ -551,9 +556,41 @@ async function sweepStreamer(
     }
   }
 
+  /*
+   * ---- 12. Roll the new insights into canonical metrics -------------------
+   *
+   * Without this the dashboard drifts. `content_metrics_current` is what every
+   * performance figure reads from, and a sync that writes raw insights and
+   * stops leaves those figures showing the previous sweep's numbers — with no
+   * indication anywhere that they are stale.
+   *
+   * Scoped to this streamer, so the cost tracks the work just done rather than
+   * the whole roster. It reads stored insights only: no Graph call, no Meta
+   * quota, and nothing here can fail in a way that invalidates content already
+   * collected — which is why a failure downgrades the status rather than
+   * discarding the sync.
+   */
+  try {
+    const rollup = await rollUpMetrics({
+      streamerId: streamer.id,
+      graphApiVersion: getServerEnv().META_GRAPH_API_VERSION,
+    });
+
+    result.metrics_rolled_up = rollup.succeeded;
+
+    if (rollup.failed > 0 && result.status === "completed") {
+      result.status = "completed_with_errors";
+      fail("metric_rollup", `${rollup.failed} items could not be rolled up.`);
+    }
+  } catch (cause) {
+    fail("metric_rollup", cause instanceof Error ? cause.message : "Metric rollup failed.");
+    if (result.status === "completed") result.status = "completed_with_errors";
+  }
+
   parentLog.info("sync.all.streamer_finished", {
     streamerCode: streamer.streamerCode,
     status: result.status,
+    metricsRolledUp: result.metrics_rolled_up,
     posts: result.posts_processed,
     videos: result.videos_processed,
     comments: result.comments_processed,
