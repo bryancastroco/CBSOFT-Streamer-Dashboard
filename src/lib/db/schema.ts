@@ -492,6 +492,14 @@ export const posts = pgTable(
     reactionCount: integer("reaction_count"),
     commentCount: integer("comment_count"),
     shareCount: integer("share_count"),
+    /**
+     * LIKE reactions only — a subset of `reactionCount`, never equal to it.
+     *
+     * From the post object rather than an insight, because
+     * `post_reactions_by_type_total` is absent for most of the roster. See
+     * migration 0012.
+     */
+    likeCount: integer("like_count"),
 
     /** The unmodified Graph response for this post, for later re-derivation. */
     rawJson: jsonb("raw_json").notNull(),
@@ -513,7 +521,8 @@ export const posts = pgTable(
       "posts_counts_non_negative_check",
       sql`(${table.reactionCount} is null or ${table.reactionCount} >= 0)
         and (${table.commentCount} is null or ${table.commentCount} >= 0)
-        and (${table.shareCount} is null or ${table.shareCount} >= 0)`,
+        and (${table.shareCount} is null or ${table.shareCount} >= 0)
+        and (${table.likeCount} is null or ${table.likeCount} >= 0)`,
     ),
   ],
 );

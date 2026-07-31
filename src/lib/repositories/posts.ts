@@ -117,6 +117,7 @@ export async function upsertPosts(params: {
     createdTime: post.createdTime,
     permalinkUrl: post.permalinkUrl,
     reactionCount: post.reactionCount,
+    likeCount: post.likeCount,
     commentCount: post.commentCount,
     shareCount: post.shareCount,
     rawJson: post.raw,
@@ -132,6 +133,14 @@ export async function upsertPosts(params: {
         message: sql`excluded.message`,
         permalinkUrl: sql`excluded.permalink_url`,
         reactionCount: sql`excluded.reaction_count`,
+        /*
+         * Coalesced, unlike its neighbours. Every post already stored predates
+         * the `like_reactions` field, so a sync that returns nothing for it —
+         * an older cached response, a partial failure — would replace a value
+         * the rollup had already resolved with null. The other counts have
+         * always been requested, so they have no such history.
+         */
+        likeCount: sql`coalesce(excluded.like_count, ${posts.likeCount})`,
         commentCount: sql`excluded.comment_count`,
         shareCount: sql`excluded.share_count`,
         rawJson: sql`excluded.raw_json`,

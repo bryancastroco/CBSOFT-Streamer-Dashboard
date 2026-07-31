@@ -32,6 +32,24 @@ export const PUBLISHED_POST_FIELDS = [
   "created_time",
   "permalink_url",
   "reactions.limit(0).summary(true)",
+  /*
+   * Likes, as a field rather than an insight.
+   *
+   * `post_reactions_by_type_total` is the only other source for the LIKE
+   * subset, and Meta returned it for 611 of 1,626 posts — so Likes read "not
+   * available" on the rest while total reactions was present throughout.
+   *
+   * The alias is not optional. Two `reactions` requests in one field list would
+   * collide on the same response key; `.as(like_reactions)` renames this one so
+   * both arrive together. Probed on v25.0 (2026-07-31): one response carrying
+   * `reactions.summary.total_count: 35` and `like_reactions.summary.total_count:
+   * 27` for the same post.
+   *
+   * A field is also structurally safer than an insight here — it needs no
+   * `read_insights`, and an unrecognised field fails only itself instead of
+   * collapsing the entire request the way an invalid metric name does.
+   */
+  "reactions.type(LIKE).limit(0).summary(true).as(like_reactions)",
   "comments.limit(0).summary(true)",
   "shares",
 ].join(",");
@@ -51,6 +69,8 @@ export type RawPublishedPost = {
   created_time?: string;
   permalink_url?: string;
   reactions?: SummaryEnvelope;
+  /** The `.as(like_reactions)` alias: LIKE reactions only. */
+  like_reactions?: SummaryEnvelope;
   comments?: SummaryEnvelope;
   /**
    * Absent entirely when a post has no shares — Meta omits the field rather
@@ -159,6 +179,8 @@ export type NormalizedPost = {
   permalinkUrl: string | null;
   /** `null` means Meta did not report it. It never means zero. */
   reactionCount: number | null;
+  /** LIKE reactions only. A subset of `reactionCount`, never equal to it. */
+  likeCount: number | null;
   commentCount: number | null;
   shareCount: number | null;
   raw: RawPublishedPost;
@@ -188,6 +210,10 @@ export function normalizePost(raw: RawPublishedPost): NormalizedPost | null {
     createdTime,
     permalinkUrl: raw.permalink_url ?? null,
     reactionCount: summaryCount(raw.reactions),
+    // Absent for a post nobody liked *and* for a post whose likes we were not
+    // given. `summaryCount` returns null for both, which is the honest reading
+    // — the alternative invents a zero indistinguishable from a measurement.
+    likeCount: summaryCount(raw.like_reactions),
     commentCount: summaryCount(raw.comments),
     // `shares` absent means Meta reported nothing. It is NOT zero: a post with
     // no shares and a post whose share count we were not given are different

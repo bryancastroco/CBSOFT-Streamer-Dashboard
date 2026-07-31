@@ -77,9 +77,24 @@ describe("a video post with the full metric set", () => {
     expect(resolved.results.interactions.value).toBe(39);
   });
 
-  it("reports three-second views as unavailable rather than borrowing views", () => {
-    expect(resolved.results.three_second_views.value).toBeNull();
-    expect(resolved.results.three_second_views.availability).toBe("unavailable");
+  it("reads three-second views from post_video_views, which is that measurement", () => {
+    /*
+     * This asserted null for a while, on the reasoning that no metric named for
+     * three seconds exists on v25 — true, and beside the point. Meta documents
+     * `post_video_views` as plays of three seconds or longer, so the figure was
+     * already collected. Reading it is not borrowing and not a derivation; it
+     * is the same number under its other name.
+     */
+    expect(resolved.results.three_second_views.value).toBe(2925);
+    expect(resolved.results.three_second_views.availability).toBe("available");
+    expect(resolved.results.three_second_views.sourceMetricName).toBe("post_video_views");
+  });
+
+  it("keeps views and three-second views identical, because they are one metric", () => {
+    expect(resolved.results.three_second_views.value).toBe(resolved.results.views.value);
+    expect(resolved.results.views.sourceMetricName).toBe(
+      resolved.results.three_second_views.sourceMetricName,
+    );
   });
 
   it("records which Meta name supplied each value", () => {
@@ -274,10 +289,40 @@ describe("snapshot deduplication", () => {
 });
 
 describe("the registry itself", () => {
-  it("never lists a candidate for three-second views", () => {
-    // Probed and rejected on both edges. An alias here would be a guess.
-    expect(METRIC_REGISTRY.three_second_views.candidates).toHaveLength(0);
+  it("pairs views and three-second views as one measurement, both ways", () => {
+    /*
+     * The link has to be symmetric or the UI merges in one direction and shows
+     * a duplicate in the other, which is the exact failure the flag exists to
+     * prevent.
+     */
+    expect(METRIC_REGISTRY.views.sameMeasurementAs).toBe("three_second_views");
+    expect(METRIC_REGISTRY.three_second_views.sameMeasurementAs).toBe("views");
+  });
+
+  it("keeps the rejected three-second names on record", () => {
+    // Five names probed individually on v25 and refused. Kept so nobody
+    // rediscovers them hopefully and adds one to the live request.
     expect(METRIC_REGISTRY.three_second_views.rejectedOnV25?.length).toBeGreaterThan(0);
+  });
+
+  it("every sameMeasurementAs pair points back at itself", () => {
+    for (const definition of Object.values(METRIC_REGISTRY)) {
+      const partner = definition.sameMeasurementAs;
+      if (!partner) continue;
+
+      expect(METRIC_REGISTRY[partner].sameMeasurementAs).toBe(definition.key);
+    }
+  });
+
+  it("resolves likes from the post field first, not the insight", () => {
+    /*
+     * Coverage is the reason: the insight arrived for 611 of 1,626 posts, the
+     * field for every post probed. Order here is the whole decision.
+     */
+    expect(METRIC_REGISTRY.likes.candidates[0]).toMatchObject({
+      metric: "like_reactions.summary.total_count",
+      source: "post_field",
+    });
   });
 
   it("only permits calculation for interactions", () => {

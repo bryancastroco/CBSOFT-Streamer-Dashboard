@@ -286,6 +286,7 @@ async function runPostBatch(input: BatchInput): Promise<BatchOutcome> {
       id: posts.id,
       streamerId: posts.streamerId,
       reactionCount: posts.reactionCount,
+      likeCount: posts.likeCount,
       commentCount: posts.commentCount,
       shareCount: posts.shareCount,
     })
@@ -356,6 +357,7 @@ async function runPostBatch(input: BatchInput): Promise<BatchOutcome> {
         videoInsights: [],
         fields: {
           reactionCount: post.reactionCount,
+          likeCount: post.likeCount,
           commentCount: post.commentCount,
           shareCount: post.shareCount,
         },

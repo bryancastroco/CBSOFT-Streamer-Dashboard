@@ -39,6 +39,8 @@ export type RawInsight = {
 /** Counts that live on the content object rather than in insights. */
 export type ContentFields = {
   reactionCount?: number | null;
+  /** LIKE reactions only, from the `like_reactions` alias on the post object. */
+  likeCount?: number | null;
   commentCount?: number | null;
   shareCount?: number | null;
 };
@@ -105,14 +107,20 @@ function findRaw(
   fields: ContentFields,
 ): { value: number | null; present: boolean } {
   if (candidate.source === "post_field") {
-    const value =
-      candidate.metric === "reactions.summary.total_count"
-        ? (fields.reactionCount ?? null)
-        : candidate.metric === "comments.summary.total_count"
-          ? (fields.commentCount ?? null)
-          : candidate.metric === "shares.count"
-            ? (fields.shareCount ?? null)
-            : null;
+    /*
+     * Keyed by Meta's own path, so the registry entry and the Graph request
+     * read the same. A name with no case here resolves to null rather than
+     * throwing — an unmapped field is a gap in coverage, not a reason to fail
+     * every other metric on the post.
+     */
+    const byField: Record<string, number | null | undefined> = {
+      "reactions.summary.total_count": fields.reactionCount,
+      "like_reactions.summary.total_count": fields.likeCount,
+      "comments.summary.total_count": fields.commentCount,
+      "shares.count": fields.shareCount,
+    };
+
+    const value = byField[candidate.metric] ?? null;
 
     return { value, present: value !== null };
   }

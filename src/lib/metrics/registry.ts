@@ -98,6 +98,16 @@ export type CanonicalMetricDefinition = {
   calculationFormula?: string;
   /** Names probed and rejected on v25, kept so nobody retries them blindly. */
   rejectedOnV25?: readonly string[];
+  /**
+   * Another key this metric is literally the same measurement as.
+   *
+   * Not a similarity hint — it means one number from one Meta metric, surfaced
+   * under two names. The UI renders the pair once so the reader is never shown
+   * an identical figure twice as though two things had been measured; the
+   * export keeps both keys so a consumer asking for either still gets it, with
+   * `source_mapping_json` naming the single metric underneath.
+   */
+  sameMeasurementAs?: CanonicalMetricKey;
 };
 
 const POST_INSIGHTS = "/{post-id}/insights";
@@ -126,15 +136,30 @@ export const METRIC_REGISTRY: Record<CanonicalMetricKey, CanonicalMetricDefiniti
      * family is rejected on the post edge in v25 — it survives only on
      * video_insights, which is why `appliesTo` excludes plain posts rather
      * than reporting them as zero.
+     *
+     * Re-probed 2026-07-31 against GM Blade on a video post *and* a text post,
+     * with `post_video_views` and `post_reactions_by_type_total` answering
+     * normally in the same run as controls. Every name below came back
+     * `(#100) The value must be a valid insights metric` on both. The
+     * documented retrieval map still lists these as the reach/views/interactions
+     * sources; on v25 with this Page's permissions they do not exist.
      */
-    rejectedOnV25: ["post_impressions_unique (post edge)", "post_reach", "post_engaged_users"],
+    rejectedOnV25: [
+      "post_impressions (post edge)",
+      "post_impressions_unique (post edge)",
+      "post_impressions_organic",
+      "post_impressions_organic_unique",
+      "post_impressions_paid",
+      "post_reach",
+      "post_engaged_users",
+    ],
   },
 
   views: {
     key: "views",
-    label: "Views",
+    label: "Views (3-second plays)",
     description:
-      "Video views Meta explicitly reports as views. Impressions are never substituted, and Reels plays are kept separate.",
+      "Plays of three seconds or longer, which is how Meta defines a view at post level. Impressions are never substituted, and Reels plays are counted separately because Meta measures them differently.",
     appliesTo: ["video_post"],
     unit: "count",
     calculationAllowed: false,
@@ -146,6 +171,8 @@ export const METRIC_REGISTRY: Record<CanonicalMetricKey, CanonicalMetricDefiniti
         extract: { kind: "number" },
       },
     ],
+    // The same number as `three_second_views`, because it is the same metric.
+    sameMeasurementAs: "three_second_views",
   },
 
   viewers: {
@@ -212,6 +239,26 @@ export const METRIC_REGISTRY: Record<CanonicalMetricKey, CanonicalMetricDefiniti
     unit: "count",
     calculationAllowed: false,
     candidates: [
+      /*
+       * The post field wins, by decision on 2026-07-31.
+       *
+       * Two reasons. Coverage: `post_reactions_by_type_total` arrived for 611
+       * of 1,626 posts, so the insight leaves Likes blank on the majority of
+       * the roster while the field answers on every post probed. Robustness: a
+       * field needs no `read_insights` and fails only itself, where one bad
+       * metric name collapses an entire insights request.
+       *
+       * They do not always agree — on the probed post the field said 27 and the
+       * insight said 29. The resolver records the disagreement as a warning
+       * rather than averaging it, and the field is what the product means by
+       * "Likes": the live count on the post right now.
+       */
+      {
+        metric: "like_reactions.summary.total_count",
+        source: "post_field",
+        endpoint: POST_EDGE,
+        extract: { kind: "number" },
+      },
       {
         metric: "post_reactions_by_type_total",
         source: "post_insight",
@@ -360,18 +407,43 @@ export const METRIC_REGISTRY: Record<CanonicalMetricKey, CanonicalMetricDefiniti
     key: "three_second_views",
     label: "3-second views",
     description:
-      "Views meeting Meta's three-second measurement. Distinct from total views and never derived from them.",
+      "Plays of three seconds or longer. At post level this is the same measurement Meta reports as Views — one metric, two names — not a separate figure.",
     appliesTo: ["video_post", "video"],
     unit: "count",
     calculationAllowed: false,
     /*
-     * Deliberately empty. Every candidate below was probed individually on
-     * v25 and rejected outright. The metric is therefore recorded as
-     * unavailable rather than approximated from a general views figure, which
-     * rule 9 forbids and which would understate or overstate depending on the
-     * content.
+     * `post_video_views` is the three-second measure.
+     *
+     * This was empty for a while, on the reasoning that no metric *named* for
+     * three seconds exists on v25 — every such name was probed and rejected,
+     * and approximating from a general views figure would have been a
+     * fabrication. That reasoning missed the real answer: Meta documents
+     * `post_video_views` as plays of three seconds or longer, so the figure
+     * already collected *is* this metric. Reading it here is not a derivation.
+     *
+     * Which is why `sameMeasurementAs` exists. Populating both keys from one
+     * source would otherwise put an identical number in two columns and invite
+     * a reader to add them, or to believe two things were measured. The UI
+     * shows the pair once; the export keeps both keys so nothing downstream
+     * breaks, with the single source named in `source_mapping_json`.
      */
-    candidates: [],
+    candidates: [
+      {
+        metric: "post_video_views",
+        source: "post_insight",
+        endpoint: POST_INSIGHTS,
+        extract: { kind: "number" },
+      },
+      {
+        // Accepted on v25 — returned no data for the probed video, but the name
+        // is valid, so it resolves for any video where Meta does report it.
+        metric: "total_video_views",
+        source: "video_insight",
+        endpoint: VIDEO_INSIGHTS,
+        extract: { kind: "number" },
+      },
+    ],
+    sameMeasurementAs: "views",
     rejectedOnV25: [
       "post_video_views_3s",
       "post_video_3s_views",
@@ -379,6 +451,14 @@ export const METRIC_REGISTRY: Record<CanonicalMetricKey, CanonicalMetricDefiniti
       "total_video_3s_views",
       "total_video_3s_views_unique",
     ],
+    /*
+     * Open question, not a settled mapping. Meta documents `post_video_views`
+     * as plays of three seconds or longer, which would make this metric and
+     * `views` the same measurement rather than two. Pointing both at one source
+     * would put an identical number in two columns, so it waits on a decision
+     * about how the UI says they are the same. Until then: unavailable, which
+     * is at least not a claim.
+     */
   },
 
   reels_plays: {
