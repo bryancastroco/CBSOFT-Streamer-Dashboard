@@ -2,7 +2,8 @@
 
 import { RefreshCw } from "lucide-react";
 
-import { idleState, syncPostsAction } from "@/app/(app)/admin/streamers/actions";
+import { syncPostsAction } from "@/app/(app)/admin/streamers/actions";
+import { idleState } from "@/lib/forms/action-state";
 import { ConfirmAction } from "@/components/data/confirm-action";
 
 /**

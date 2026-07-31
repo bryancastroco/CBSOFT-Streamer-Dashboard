@@ -1,5 +1,7 @@
 "use server";
 
+import type { ActionState as VideoCommentActionState } from "@/lib/forms/action-state";
+
 import { revalidatePath } from "next/cache";
 
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
@@ -13,13 +15,6 @@ import { videoIdSchema } from "@/lib/validation/videos";
  * Thin wrappers over the shared `syncContentComments` — the video path differs
  * from the post path only in the content ref it passes.
  */
-
-export type VideoCommentActionState = {
-  status: "idle" | "success" | "error";
-  message: string | null;
-};
-
-export const idleVideoCommentState: VideoCommentActionState = { status: "idle", message: null };
 
 async function requireAdminActor(): Promise<{ id: string } | VideoCommentActionState> {
   try {

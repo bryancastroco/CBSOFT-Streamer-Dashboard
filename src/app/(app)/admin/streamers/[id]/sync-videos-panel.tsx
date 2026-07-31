@@ -2,7 +2,8 @@
 
 import { Video } from "lucide-react";
 
-import { idleState, syncVideosAction } from "@/app/(app)/admin/streamers/actions";
+import { syncVideosAction } from "@/app/(app)/admin/streamers/actions";
+import { idleState } from "@/lib/forms/action-state";
 import { ConfirmAction } from "@/components/data/confirm-action";
 
 /**

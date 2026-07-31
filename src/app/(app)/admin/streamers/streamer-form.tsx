@@ -4,7 +4,8 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { CircleAlert } from "lucide-react";
 
-import { createStreamerAction, idleState } from "@/app/(app)/admin/streamers/actions";
+import { createStreamerAction } from "@/app/(app)/admin/streamers/actions";
+import { idleState } from "@/lib/forms/action-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

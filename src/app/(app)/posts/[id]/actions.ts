@@ -1,5 +1,7 @@
 "use server";
 
+import type { ActionState as CommentActionState } from "@/lib/forms/action-state";
+
 import { revalidatePath } from "next/cache";
 
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
@@ -13,13 +15,6 @@ import { postIdSchema } from "@/lib/validation/posts";
  * Both begin with `assertAdmin()` — they spend Meta quota and AI tokens, so
  * they are not viewer-reachable even though the page they live on is.
  */
-
-export type CommentActionState = {
-  status: "idle" | "success" | "error";
-  message: string | null;
-};
-
-export const idleCommentState: CommentActionState = { status: "idle", message: null };
 
 async function requireAdminActor(): Promise<{ id: string } | CommentActionState> {
   try {

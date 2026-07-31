@@ -61,6 +61,10 @@ function decryptToken(encoded: string): string {
  * endpoint was simply wrong.
  */
 const POST_CANDIDATES = [
+  // The exact combined parameter the sync now sends — all or nothing.
+  "post_clicks,post_reactions_by_type_total,post_activity_by_action_type,post_video_views,post_video_views_organic,post_video_views_unique,post_video_view_time,post_video_avg_time_watched",
+  "post_video_views_unique",
+  "post_video_view_time",
   "post_video_views", // control — known good
   "post_video_views_unique",
   "post_video_view_time",
@@ -137,8 +141,10 @@ try {
   // One video post and one video: the only content these metrics apply to.
   const [post] = await sql<{ fb: string }[]>`
     select p.facebook_post_id as fb from posts p
-     join post_insights i on i.post_id = p.id
-     where i.metric_name = 'post_video_views'
+     where not exists (
+       select 1 from post_insights i
+        where i.post_id = p.id and i.metric_name like 'post_video_%'
+          and (i.value_json)::text <> '0')
      limit 1`;
   const [video] = await sql<{ fb: string }[]>`
     select facebook_video_id as fb from videos limit 1`;

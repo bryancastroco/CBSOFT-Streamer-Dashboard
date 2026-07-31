@@ -6,14 +6,13 @@ import { toast } from "sonner";
 
 import {
   deleteStreamerAction,
-  idleState,
   replaceTokenAction,
   requestSyncAction,
   setStreamerActiveAction,
   updateStreamerAction,
   validateTokenAction,
-  type ActionState,
 } from "@/app/(app)/admin/streamers/actions";
+import { idleState, type ActionState } from "@/lib/forms/action-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

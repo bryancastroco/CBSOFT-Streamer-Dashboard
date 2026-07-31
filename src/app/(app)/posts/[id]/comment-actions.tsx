@@ -2,11 +2,8 @@
 
 import { MessagesSquare, RefreshCw } from "lucide-react";
 
-import {
-  idleCommentState,
-  regenerateSummaryAction,
-  syncCommentsAction,
-} from "@/app/(app)/posts/[id]/actions";
+import { regenerateSummaryAction, syncCommentsAction } from "@/app/(app)/posts/[id]/actions";
+import { idleState as idleCommentState } from "@/lib/forms/action-state";
 import { ConfirmAction } from "@/components/data/confirm-action";
 
 /**

@@ -3,10 +3,10 @@
 import { MessagesSquare, RefreshCw } from "lucide-react";
 
 import {
-  idleVideoCommentState,
   regenerateVideoSummaryAction,
   syncVideoCommentsAction,
 } from "@/app/(app)/videos/[id]/actions";
+import { idleState as idleVideoCommentState } from "@/lib/forms/action-state";
 import { ConfirmAction } from "@/components/data/confirm-action";
 
 /**

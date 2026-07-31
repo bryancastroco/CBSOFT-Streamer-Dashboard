@@ -1,10 +1,11 @@
 "use server";
 
+import type { ActionState } from "@/lib/forms/action-state";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
-import type { TokenValidation } from "@/lib/meta/token-status";
 import {
   createStreamer,
   replaceStreamerToken,
@@ -34,17 +35,6 @@ import {
  * No action ever accepts a token in a field it then echoes back, and no
  * returned state carries token material.
  */
-
-export type ActionState = {
-  status: "idle" | "success" | "error";
-  message: string | null;
-  /** Field-level messages, keyed by form field name. */
-  fieldErrors?: Record<string, string>;
-  /** Populated after a token operation, so the UI can show the verdict. */
-  validation?: TokenValidation | null;
-};
-
-export const idleState: ActionState = { status: "idle", message: null };
 
 async function requireActor(): Promise<{ id: string } | ActionState> {
   try {
