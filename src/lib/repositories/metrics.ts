@@ -4,7 +4,7 @@ import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
-import { tsParam } from "@/lib/db/params";
+import { tsParam, tsResult } from "@/lib/db/params";
 import { commentSummaries, comments, posts, streamers, videos } from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
 
@@ -119,7 +119,7 @@ async function aggregatePosts(filters: MetricsFilters) {
   const [row] = await db
     .select({
       rows: sql<number>`count(*)::int`,
-      latest: sql<Date | null>`max(${posts.createdTime})`,
+      latest: sql<string | null>`max(${posts.createdTime})`,
       reactionsSum: sql<string | null>`sum(${posts.reactionCount})`,
       reactionsReported: sql<number>`count(${posts.reactionCount})::int`,
       reactionsMissing: sql<number>`(count(*) - count(${posts.reactionCount}))::int`,
@@ -135,7 +135,7 @@ async function aggregatePosts(filters: MetricsFilters) {
 
   return {
     rows: row?.rows ?? 0,
-    latest: row?.latest ?? null,
+    latest: tsResult(row?.latest),
     reactions: row
       ? toTotal(row.reactionsSum, row.reactionsReported, row.reactionsMissing)
       : EMPTY_TOTAL,
@@ -152,12 +152,12 @@ async function aggregateVideos(filters: MetricsFilters) {
   const [row] = await db
     .select({
       rows: sql<number>`count(*)::int`,
-      latest: sql<Date | null>`max(${videos.createdTime})`,
+      latest: sql<string | null>`max(${videos.createdTime})`,
     })
     .from(videos)
     .where(whereOf(videoWindow(filters)));
 
-  return { rows: row?.rows ?? 0, latest: row?.latest ?? null };
+  return { rows: row?.rows ?? 0, latest: tsResult(row?.latest) };
 }
 
 /**

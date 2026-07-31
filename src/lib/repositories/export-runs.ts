@@ -5,6 +5,7 @@ import { desc, eq, gte, sql } from "drizzle-orm";
 import { sanitiseMessage } from "@/lib/automation/sanitise";
 import { getDb } from "@/lib/db";
 import { exportRuns, syncRuns } from "@/lib/db/schema";
+import { tsResult } from "@/lib/db/params";
 import { childLogger } from "@/lib/observability/logger";
 
 /**
@@ -191,7 +192,7 @@ export async function getExportStatus(): Promise<ExportStatusView> {
 
       // Any authenticated automation contact, not just an export.
       db
-        .select({ at: sql<Date | null>`max(${syncRuns.startedAt})` })
+        .select({ at: sql<string | null>`max(${syncRuns.startedAt})` })
         .from(syncRuns)
         .where(eq(syncRuns.syncType, "automation")),
 
@@ -202,7 +203,7 @@ export async function getExportStatus(): Promise<ExportStatusView> {
     .filter((value): value is Date => value instanceof Date)
     .sort((a, b) => b.getTime() - a.getTime())[0];
 
-  const lastSyncAt = lastSync[0]?.at ? new Date(lastSync[0].at) : null;
+  const lastSyncAt = tsResult(lastSync[0]?.at);
 
   const lastContact = [lastExportAt, lastSyncAt]
     .filter((value): value is Date => value instanceof Date)
