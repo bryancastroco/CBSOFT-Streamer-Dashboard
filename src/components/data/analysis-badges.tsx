@@ -1,44 +1,36 @@
-import { Badge } from "@/components/ui/badge";
-import {
-  NOT_ANALYSED,
-  sentimentLabel,
-  sentimentTone,
-  summaryStatusLabel,
-  summaryStatusTone,
-} from "@/lib/ai/presentation";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { NOT_ANALYSED, sentimentLabel, summaryStatusLabel } from "@/lib/ai/presentation";
 
 /**
  * Sentiment and summary-status badges.
  *
- * Both render "Not analysed" for a null rather than nothing at all: an empty
- * cell reads as a rendering bug, while the distinction between *not analysed*
- * and *analysed and found neutral* is one a reader needs.
+ * These now delegate to `StatusBadge`, which is the single place a status
+ * becomes a colour. They previously rendered their own `Badge` with their own
+ * tone mapping, so the same sentiment looked one way here and another way on
+ * the dashboard — and neither carried an icon, leaving colour as the only
+ * signal for anyone who could not read the wording alone.
+ *
+ * They survive as named wrappers rather than being deleted because the call
+ * sites read better for it: `<SentimentBadge sentiment={…} />` says what it is
+ * at a glance, and the domain argument cannot be got wrong.
+ *
+ * Both still render "Not analysed" as plain text for a null. An empty cell
+ * reads as a rendering fault, and the difference between *not analysed* and
+ * *analysed and found neutral* is one the reader needs.
  */
 
 export function SentimentBadge({ sentiment }: { sentiment: string | null | undefined }) {
-  const label = sentimentLabel(sentiment);
-
-  if (label === NOT_ANALYSED) {
+  if (sentimentLabel(sentiment) === NOT_ANALYSED) {
     return <span className="text-xs text-muted-foreground">{NOT_ANALYSED}</span>;
   }
 
-  return (
-    <Badge variant={sentimentTone(sentiment)} className="whitespace-nowrap">
-      {label}
-    </Badge>
-  );
+  return <StatusBadge domain="sentiment" status={sentiment} />;
 }
 
 export function SummaryStatusBadge({ status }: { status: string | null | undefined }) {
-  const label = summaryStatusLabel(status);
-
-  if (label === NOT_ANALYSED) {
+  if (summaryStatusLabel(status) === NOT_ANALYSED) {
     return <span className="text-xs text-muted-foreground">{NOT_ANALYSED}</span>;
   }
 
-  return (
-    <Badge variant={summaryStatusTone(status)} className="whitespace-nowrap">
-      {label}
-    </Badge>
-  );
+  return <StatusBadge domain="ai" status={status} />;
 }
