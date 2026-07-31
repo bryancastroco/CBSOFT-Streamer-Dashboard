@@ -237,6 +237,69 @@ describe("average play time", () => {
   });
 });
 
+describe("REGRESSION: each metric uses its own denominator", () => {
+  it("never reports coverage above 100%", async () => {
+    /*
+     * Found by running the aggregate against production, not by this suite.
+     * Three-second views reported "127 of 121" — it had borrowed the `views`
+     * denominator, and `views` applies to video posts while three-second views
+     * applies to video posts *and* video objects. Six videos counted in the
+     * numerator and excluded from the denominator. Watch time was understated
+     * the same way, 81 of 121 where the truth was 81 of 184.
+     *
+     * A ratio above one is the cheapest possible signal that a denominator has
+     * been shared, so it is asserted across every metric rather than only the
+     * two that were wrong.
+     */
+    const post = await seedPost("video-post");
+    await writeMetrics({
+      postId: post,
+      views: 100,
+      viewers: 90,
+      averagePlayTime: 5_000,
+      likes: 3,
+      isVideoPost: true,
+    });
+
+    // A video object: three-second views and watch time apply, `views` does not.
+    const video = await client.query<{ id: string }>(
+      `insert into videos (streamer_id, facebook_video_id, created_time, raw_json)
+       values ($1, 'vid1', now(), '{}'::jsonb) returning id`,
+      [streamerId],
+    );
+
+    await client.query(
+      `insert into content_metrics_current
+         (content_type, video_id, streamer_id, three_second_views, watch_time_ms,
+          availability_json, graph_api_version, metric_hash, last_collected_at)
+       values ('video', $1, $2, 55, 9000, $3::jsonb, 'v25.0', 'vhash', now())`,
+      [
+        video.rows[0]!.id,
+        streamerId,
+        JSON.stringify({
+          views: { status: "not_applicable" },
+          three_second_views: { status: "available" },
+          watch_time: { status: "available" },
+        }),
+      ],
+    );
+
+    const totals = await getMetricTotals({});
+
+    for (const metric of Object.values(totals.metrics)) {
+      expect(
+        metric.reported,
+        `${metric.key} reported ${metric.reported} of ${metric.applicable} — a metric cannot be reported by more content than it applies to`,
+      ).toBeLessThanOrEqual(metric.applicable);
+    }
+
+    // Both the video post and the video object can carry three-second views.
+    expect(totals.metrics.three_second_views.applicable).toBe(2);
+    // Only the video post can carry `views`.
+    expect(totals.metrics.views.applicable).toBe(1);
+  });
+});
+
 describe("the rollup gap is visible", () => {
   it("counts content that has been synced but not rolled up", async () => {
     const rolled = await seedPost("rolled");

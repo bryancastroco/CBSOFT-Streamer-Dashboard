@@ -7,10 +7,11 @@ import { contentMetricsCurrent, posts, videos } from "@/lib/db/schema";
 import { tsParam } from "@/lib/db/params";
 
 import type { AggregatedMetric } from "@/lib/metrics/groups";
-import type {
-  CanonicalMetricKey,
-  ContentApplicability,
-  MetricAvailability,
+import {
+  CANONICAL_METRIC_KEYS,
+  type CanonicalMetricKey,
+  type ContentApplicability,
+  type MetricAvailability,
 } from "@/lib/metrics/registry";
 
 /**
@@ -209,6 +210,25 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
   const sum = (column: AnyColumn) => sql<string | null>`sum(${column})`;
   const reported = (column: AnyColumn) => sql<number>`count(${column})::int`;
 
+  /**
+   * `applicable_<key>` for every canonical metric, derived from the registry.
+   *
+   * Generated rather than hand-listed so a metric added to the registry cannot
+   * silently inherit a neighbour's denominator — which is exactly how
+   * three-second views came to report coverage of 127 out of 121.
+   */
+  const applicableCounts = Object.fromEntries(
+    CANONICAL_METRIC_KEYS.map((key) => [
+      `applicable_${key}`,
+      sql<number>`count(*) filter (
+        where coalesce(
+          ${contentMetricsCurrent.availabilityJson} -> ${key} ->> 'status',
+          'unavailable'
+        ) <> 'not_applicable'
+      )::int`,
+    ]),
+  ) as Record<`applicable_${CanonicalMetricKey}`, SQL<number>>;
+
   const [row] = await db
     .select({
       contentCount: sql<number>`count(*)::int`,
@@ -255,19 +275,18 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
       playTimeN: reported(contentMetricsCurrent.averagePlayTimeMs),
 
       /*
-       * Applicability denominators. A metric that cannot apply to text posts
-       * must not be measured against all 1,626 of them — "121 of 121 video
-       * posts" and "121 of 1,626 posts" describe very different coverage.
+       * One applicability denominator per metric, read from that metric's own
+       * availability entry.
+       *
+       * Sharing a denominator across a group looks reasonable and is wrong.
+       * Running this against production reported "127 of 121" for three-second
+       * views: it borrowed the `views` denominator, and `views` applies to
+       * video posts while three-second views applies to video posts *and*
+       * video objects. Six videos were counted in the numerator and excluded
+       * from the denominator. Watch time was understated the same way — 81 of
+       * 121 where the truth is 81 of 184.
        */
-      videoApplicable: sql<number>`count(*) filter (
-        where ${contentMetricsCurrent.availabilityJson} -> 'views' ->> 'status' <> 'not_applicable'
-      )::int`,
-      reachApplicable: sql<number>`count(*) filter (
-        where ${contentMetricsCurrent.availabilityJson} -> 'reach' ->> 'status' <> 'not_applicable'
-      )::int`,
-      reelsApplicable: sql<number>`count(*) filter (
-        where ${contentMetricsCurrent.availabilityJson} -> 'reels_plays' ->> 'status' <> 'not_applicable'
-      )::int`,
+      ...applicableCounts,
     })
     .from(contentMetricsCurrent)
     .leftJoin(posts, eq(posts.id, contentMetricsCurrent.postId))
@@ -295,7 +314,10 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
     calculated,
   });
 
-  const videoApplicable = row?.videoApplicable ?? 0;
+  /** Each metric's own denominator, never a neighbour's. */
+  const applicable = (key: CanonicalMetricKey): number =>
+    (row as Record<string, number> | undefined)?.[`applicable_${key}`] ?? 0;
+
   const weighted = num(row?.playTimeWeighted ?? null);
   const weight = num(row?.playTimeWeight ?? null);
 
@@ -303,26 +325,42 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
     contentCount: total,
     withoutMetrics: gap,
     metrics: {
-      reach: build("reach", num(row?.reachSum), row?.reachN ?? 0, row?.reachApplicable ?? 0),
-      views: build("views", num(row?.viewsSum), row?.viewsN ?? 0, videoApplicable),
-      viewers: build("viewers", num(row?.viewersSum), row?.viewersN ?? 0, videoApplicable),
+      reach: build("reach", num(row?.reachSum), row?.reachN ?? 0, applicable("reach")),
+      views: build("views", num(row?.viewsSum), row?.viewsN ?? 0, applicable("views")),
+      viewers: build("viewers", num(row?.viewersSum), row?.viewersN ?? 0, applicable("viewers")),
       interactions: build(
         "interactions",
         num(row?.interactionsSum),
         row?.interactionsN ?? 0,
-        total,
+        applicable("interactions"),
+        /*
+         * True when *any* item's interactions were derived. The total then
+         * mixes measured and calculated figures, and calling the whole thing
+         * calculated is the conservative reading — the alternative presents a
+         * partly-derived number as if Meta had measured all of it.
+         */
         (row?.interactionsCalculated ?? 0) > 0,
       ),
-      likes: build("likes", num(row?.likesSum), row?.likesN ?? 0, total),
-      reactions: build("reactions", num(row?.reactionsSum), row?.reactionsN ?? 0, total),
-      comments: build("comments", num(row?.commentsSum), row?.commentsN ?? 0, total),
-      shares: build("shares", num(row?.sharesSum), row?.sharesN ?? 0, total),
-      watch_time: build("watch_time", num(row?.watchSum), row?.watchN ?? 0, videoApplicable),
+      likes: build("likes", num(row?.likesSum), row?.likesN ?? 0, applicable("likes")),
+      reactions: build(
+        "reactions",
+        num(row?.reactionsSum),
+        row?.reactionsN ?? 0,
+        applicable("reactions"),
+      ),
+      comments: build("comments", num(row?.commentsSum), row?.commentsN ?? 0, applicable("comments")),
+      shares: build("shares", num(row?.sharesSum), row?.sharesN ?? 0, applicable("shares")),
+      watch_time: build(
+        "watch_time",
+        num(row?.watchSum),
+        row?.watchN ?? 0,
+        applicable("watch_time"),
+      ),
       average_play_time: {
         key: "average_play_time",
         value: weighted !== null && weight !== null && weight > 0 ? weighted / weight : null,
         reported: row?.playTimeN ?? 0,
-        applicable: videoApplicable,
+        applicable: applicable("average_play_time"),
         // Always. A roster-level average is derived however it is computed.
         calculated: true,
       },
@@ -330,13 +368,13 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
         "three_second_views",
         num(row?.threeSecondSum),
         row?.threeSecondN ?? 0,
-        videoApplicable,
+        applicable("three_second_views"),
       ),
       reels_plays: build(
         "reels_plays",
         num(row?.reelsSum),
         row?.reelsN ?? 0,
-        row?.reelsApplicable ?? 0,
+        applicable("reels_plays"),
       ),
     },
   };
