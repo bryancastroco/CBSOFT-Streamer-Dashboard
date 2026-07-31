@@ -36,6 +36,8 @@ describe("migrations apply cleanly", () => {
       "audit_logs",
       "comment_summaries",
       "comments",
+      "content_metric_snapshots",
+      "content_metrics_current",
       "export_runs",
       "post_insights",
       "posts",

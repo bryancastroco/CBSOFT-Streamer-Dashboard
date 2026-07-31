@@ -38,19 +38,26 @@
  * continues to send none.
  */
 
-/** Confirmed working on Graph v25.0. Order is cosmetic. */
-export const POST_INSIGHT_METRICS: readonly string[] = [
-  // Link and content clicks, lifetime.
-  "post_clicks",
-  // Reaction totals broken down by type: {like, love, haha, …}.
-  "post_reactions_by_type_total",
-  // Shares, likes and comments as one breakdown object.
-  "post_activity_by_action_type",
-  // Video metrics, returned for video posts and absent for the rest.
-  "post_video_views",
-  "post_video_views_organic",
-  "post_video_avg_time_watched",
-] as const;
+import { POST_INSIGHT_METRIC_NAMES } from "@/lib/metrics/registry";
 
-/** The `metric` query-string value for a post insights request. */
+/**
+ * Confirmed working on Graph v25.0. Order is cosmetic.
+ *
+ * The canonical set comes from the metric registry so the two cannot drift —
+ * adding a probed candidate there updates this request automatically. The
+ * extras below are not canonical metrics but are stored raw and worth keeping:
+ * `post_clicks` for engagement context, and `post_video_views_organic` to
+ * separate organic reach from any future paid distribution.
+ *
+ * `post_video_views_unique` and `post_video_view_time` were added in Phase 21a
+ * after `scripts/probe-metrics.mts` confirmed both against a live Page. They
+ * supply viewers and watch time, which the audit had wrongly reported as
+ * unavailable on the post edge.
+ */
+const EXTRA_RAW_METRICS = ["post_clicks", "post_video_views_organic"] as const;
+
+export const POST_INSIGHT_METRICS: readonly string[] = [
+  ...new Set([...POST_INSIGHT_METRIC_NAMES, ...EXTRA_RAW_METRICS]),
+];
+
 export const POST_INSIGHT_METRIC_PARAM = POST_INSIGHT_METRICS.join(",");
