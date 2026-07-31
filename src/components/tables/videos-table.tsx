@@ -109,7 +109,7 @@ export function VideosTable({
                 <TableCell className="align-top">
                   <Link
                     href={`/videos/${video.id}`}
-                    className="block max-w-sm text-sm font-medium underline-offset-4 hover:underline"
+                    className="block max-w-[calc(100vw-5rem)] text-sm font-medium underline-offset-4 hover:underline sm:max-w-sm"
                   >
                     <span className="line-clamp-2">
                       {videoLabel(video.title, video.description)}

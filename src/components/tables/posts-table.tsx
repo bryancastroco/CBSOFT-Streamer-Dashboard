@@ -120,7 +120,7 @@ export function PostsTable({
               <TableCell className="align-top">
                 <Link
                   href={`/posts/${post.id}`}
-                  className="block max-w-sm text-sm font-medium underline-offset-4 hover:underline"
+                  className="block max-w-[calc(100vw-5rem)] text-sm font-medium underline-offset-4 hover:underline sm:max-w-sm"
                 >
                   {/*
                    * The clamp goes on a block inside the link, not on the link
