@@ -62,6 +62,23 @@ const EFFORT = "medium";
 
 const REQUEST_TIMEOUT_MS = 120_000;
 
+/**
+ * Whether a 400 really means "this account cannot pay" rather than "this
+ * request is wrong".
+ *
+ * Exported so the decision can be pinned by a test. Anthropic returns both as
+ * status 400 with type `invalid_request_error`, so the message is the only
+ * thing separating them — and getting it wrong in the safe-looking direction
+ * records a billing problem as a malformed request, marks it non-retryable, and
+ * stops the offline fallback from ever running.
+ *
+ * Narrow on purpose. Broadening this would begin hiding genuine request bugs
+ * behind a local analysis.
+ */
+export function isAccountUnavailable(message: string): boolean {
+  return /credit balance|insufficient|quota|billing|payment/i.test(message);
+}
+
 type AnthropicTextBlock = { type: string; text?: string };
 
 /**
@@ -287,7 +304,29 @@ export class AnthropicProvider implements AiProvider {
     }
 
     if (cause instanceof Anthropic.BadRequestError) {
-      // Usually a schema or parameter problem — our bug, not a transient one.
+      /*
+       * A 400 is usually our bug — a schema or parameter problem — but not
+       * always. An exhausted balance arrives as a 400 too, and it says nothing
+       * about the request: the same call would succeed with credit on the
+       * account. Lumping the two together made a billing problem look like a
+       * malformed request and, worse, marked it `retryable: false`, so the
+       * offline fallback declined to run and the reader got nothing at all.
+       *
+       * Matched on the message because the status and error type are identical
+       * either way. Kept narrow deliberately — a broad match here would start
+       * swallowing genuine request bugs behind a local analysis.
+       */
+      if (isAccountUnavailable(cause.message)) {
+        return {
+          ...base,
+          category: "unavailable",
+          message: `Anthropic is unavailable to this account: ${cause.message}`,
+          // Not "try the same call again in a moment" — this is what lets the
+          // caller fall back to a local analysis rather than storing a failure.
+          retryable: true,
+        };
+      }
+
       return {
         ...base,
         category: "invalid_request",
