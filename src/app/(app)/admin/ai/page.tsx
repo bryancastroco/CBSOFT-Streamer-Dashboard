@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { CircleAlert } from "lucide-react";
 
+import { AiTestButton } from "@/app/(app)/admin/ai/test-button";
 import { ConfigurationBroken, SettingsCard } from "@/components/admin/settings-table";
 import { MetricCard, MetricGrid } from "@/components/data/metric-card";
 import { MetricCardSkeleton } from "@/components/data/states";
@@ -131,6 +132,20 @@ export default async function AiSettingsPage() {
       ) : (
         <ConfigurationBroken missingKeys={config.missingKeys} />
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Test the connection</CardTitle>
+          <CardDescription>
+            Sends one short request through the same path production uses, and reports exactly what
+            came back. &ldquo;Set&rdquo; above means a key exists, not that Anthropic accepts it —
+            this is the difference.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AiTestButton />
+        </CardContent>
+      </Card>
 
       <section className="space-y-3">
         <SectionHeader
