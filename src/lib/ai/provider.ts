@@ -12,7 +12,7 @@ import type { CommentAnalysis } from "@/lib/ai/contract";
  * aborts a sync run.
  */
 
-export type AiProviderName = "anthropic";
+export type AiProviderName = "anthropic" | "gemini" | "offline";
 
 export type AiFailureCategory =
   /** Provider rejected the request as malformed or unsupported. */

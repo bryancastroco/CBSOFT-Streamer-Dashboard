@@ -329,17 +329,9 @@ export class AnthropicProvider implements AiProvider {
   }
 }
 
-/**
- * Resolve the configured provider.
- *
- * `AI_PROVIDER` is an enum of one today. The switch exists so adding a provider
- * is an added case rather than a rewrite of every call site.
+/*
+ * Provider resolution used to live here, back when `AI_PROVIDER` was an enum of
+ * one. It now lives in `ai/resolve.ts` alongside the offline fallback — keeping
+ * the selector inside one of the providers it selects meant Anthropic was
+ * imported, and its key demanded, even on a deployment configured for Gemini.
  */
-export function getAiProvider(): AiProvider {
-  const { AI_PROVIDER } = getServerEnv();
-
-  switch (AI_PROVIDER) {
-    case "anthropic":
-      return new AnthropicProvider();
-  }
-}

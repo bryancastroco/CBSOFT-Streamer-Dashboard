@@ -81,13 +81,25 @@ const serverEnvSchema = z
      * not actually be used to run without Anthropic, which was its entire point.
      */
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
-    AI_PROVIDER: z.enum(["anthropic"]).default("anthropic"),
+    AI_PROVIDER: z.enum(["anthropic", "gemini", "offline"]).default("anthropic"),
     /**
      * Overridable so a model can be changed without a deploy. Defaults to the
      * current Opus — summarising a few hundred comments into themes is a
      * judgement task, not an extraction one.
      */
     ANTHROPIC_MODEL: z.string().min(1).default("claude-opus-5"),
+
+    /** Gemini. Free tier, which is why it exists as an option here. */
+    GEMINI_API_KEY: z.string().min(1).optional(),
+    GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+
+    /**
+     * Fall back to in-process analysis when the provider cannot answer.
+     *
+     * A rate limit or an empty balance then costs the prose summary rather than
+     * the whole analysis. Off means a provider failure is stored as a failure.
+     */
+    AI_OFFLINE_FALLBACK: z.coerce.boolean().default(true),
 
     // -------------------------------------------------------------------------
     // Synchronisation defaults
@@ -180,13 +192,32 @@ const serverEnvSchema = z
      * rest of this module follows, and the reason `getServerEnvSafe` can report
      * what is missing without publishing anything.
      */
-    if (env.AI_SUMMARIZATION_ENABLED && !env.ANTHROPIC_API_KEY) {
+    /*
+     * Which key is required depends on which provider is selected. Demanding
+     * an Anthropic key on a deployment configured for Gemini would refuse to
+     * boot over a credential it will never use.
+     *
+     * `offline` needs no key at all — that is the entire point of it.
+     */
+    if (env.AI_SUMMARIZATION_ENABLED && env.AI_PROVIDER === "anthropic" && !env.ANTHROPIC_API_KEY) {
       ctx.addIssue({
         code: "custom",
         path: ["ANTHROPIC_API_KEY"],
         message:
-          "ANTHROPIC_API_KEY is required while AI_SUMMARIZATION_ENABLED is true. " +
-          "Set the key, or set AI_SUMMARIZATION_ENABLED=false to run without AI.",
+          "ANTHROPIC_API_KEY is required while AI_SUMMARIZATION_ENABLED is true and " +
+          "AI_PROVIDER is anthropic. Set the key, switch AI_PROVIDER to gemini or offline, " +
+          "or set AI_SUMMARIZATION_ENABLED=false to run without AI.",
+      });
+    }
+
+    if (env.AI_SUMMARIZATION_ENABLED && env.AI_PROVIDER === "gemini" && !env.GEMINI_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["GEMINI_API_KEY"],
+        message:
+          "GEMINI_API_KEY is required while AI_SUMMARIZATION_ENABLED is true and " +
+          "AI_PROVIDER is gemini. Create one free at aistudio.google.com, or switch " +
+          "AI_PROVIDER to offline to analyse comments without a provider.",
       });
     }
   });

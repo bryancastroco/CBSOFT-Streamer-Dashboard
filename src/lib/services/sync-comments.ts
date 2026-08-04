@@ -3,7 +3,7 @@ import "server-only";
 import { getServerEnv } from "@/config/env";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { recordAuditLogSafe } from "@/lib/audit/log";
-import { getAiProvider } from "@/lib/ai/anthropic";
+import { analyzeWithFallback } from "@/lib/ai/resolve";
 import { emptyAnalysis } from "@/lib/ai/contract";
 import type { ContentRef } from "@/lib/comments/content-ref";
 import {
@@ -246,8 +246,12 @@ export async function syncContentComments(params: {
     };
   }
 
-  const provider = getAiProvider();
-  const analysis = await provider.analyzeComments({ messages });
+  /*
+   * Falls back to in-process analysis when the provider cannot answer for a
+   * reason unrelated to the comments — an empty balance, a free-tier ceiling,
+   * an outage. A rejected key or a malformed request still fails loudly.
+   */
+  const analysis = await analyzeWithFallback({ messages });
 
   const entityType =
     params.content.type === "post" ? AUDIT_ENTITY_TYPES.post : AUDIT_ENTITY_TYPES.video;

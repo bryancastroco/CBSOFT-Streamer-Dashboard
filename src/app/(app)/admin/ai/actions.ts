@@ -2,7 +2,7 @@
 
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
 import { AI_FAILURE_LABELS } from "@/lib/ai/provider";
-import { getAiProvider } from "@/lib/ai/anthropic";
+import { getConfiguredProvider } from "@/lib/ai/resolve";
 import { childLogger } from "@/lib/observability/logger";
 
 /**
@@ -51,7 +51,9 @@ export async function testAiConnectionAction(): Promise<AiTestState> {
 
   let provider;
   try {
-    provider = getAiProvider();
+    // The configured provider, deliberately not the fallback wrapper: a test
+    // that quietly succeeds offline tests nothing.
+    provider = getConfiguredProvider();
   } catch (cause) {
     /*
      * Construction fails when the key is absent entirely — a different problem
