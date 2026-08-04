@@ -46,6 +46,15 @@ export async function requireUser(): Promise<CurrentUser> {
     redirect(LOGIN_PATH);
   }
 
+  /*
+   * Deactivated accounts are told which of the two situations they are in.
+   * "Not authorised" invites someone to keep trying; "switched off" tells them
+   * to talk to an administrator, which is the only thing that will help.
+   */
+  if (result.reason === "deactivated") {
+    redirect(`${UNAUTHORIZED_PATH}?reason=deactivated`);
+  }
+
   // Authenticated but not provisioned, or holding a role this build does not
   // recognise. Both are "you are someone, but not someone we can authorise".
   redirect(UNAUTHORIZED_PATH);
@@ -86,6 +95,13 @@ export async function assertUser(): Promise<CurrentUser> {
 
   if (result.reason === "no_session") {
     throw new AuthorizationError("unauthenticated", "You must be signed in to do that.");
+  }
+
+  if (result.reason === "deactivated") {
+    throw new AuthorizationError(
+      "forbidden",
+      "This account has been deactivated. An administrator can restore it.",
+    );
   }
 
   throw new AuthorizationError("forbidden", "Your account is not authorised for this workspace.");

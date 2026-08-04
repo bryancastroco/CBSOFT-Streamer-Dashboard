@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { RoleForm } from "@/app/(app)/admin/users/role-form";
+import { ActivationForm, InviteForm, RoleForm } from "@/app/(app)/admin/users/role-form";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,20 @@ export default async function AdminUsersPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Invite someone</CardTitle>
+          <CardDescription>
+            Supabase emails a link and they choose their own password — no password is ever entered
+            here, stored here, or sent by this application. Invite as a viewer unless they need to
+            manage streamers and Page tokens.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InviteForm />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Accounts</CardTitle>
           <CardDescription>
             New accounts are provisioned as viewers. Promote deliberately — an admin can manage
@@ -56,8 +70,9 @@ export default async function AdminUsersPage() {
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Added</TableHead>
-                <TableHead className="text-right">Change</TableHead>
+                <TableHead className="text-right">Manage</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -74,14 +89,33 @@ export default async function AdminUsersPage() {
                       {ROLE_LABELS[user.role]}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    {user.deactivatedAt ? (
+                      <div>
+                        <Badge variant="outline" className="text-destructive">
+                          Deactivated
+                        </Badge>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {formatDate(user.deactivatedAt)}
+                        </p>
+                      </div>
+                    ) : (
+                      <Badge variant="secondary">Active</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(user.createdAt)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <RoleForm
                         userId={user.id}
                         currentRole={user.role}
+                        isSelf={user.id === currentUser.id}
+                      />
+                      <ActivationForm
+                        userId={user.id}
+                        active={user.deactivatedAt === null}
                         isSelf={user.id === currentUser.id}
                       />
                     </div>
@@ -91,7 +125,7 @@ export default async function AdminUsersPage() {
 
               {users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                     No accounts yet. Run the seed script to create the first admin.
                   </TableCell>
                 </TableRow>

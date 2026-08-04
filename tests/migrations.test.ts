@@ -100,7 +100,17 @@ describe("migrations apply cleanly", () => {
 
   it("creates every column the specification lists", async () => {
     const expected: Record<string, string[]> = {
-      users: ["id", "email", "full_name", "role", "created_at", "updated_at"],
+      users: [
+        "id",
+        "email",
+        "full_name",
+        "role",
+        // Deactivation is soft: audit_logs references these rows, and the trail
+        // has to outlive the person it describes.
+        "deactivated_at",
+        "created_at",
+        "updated_at",
+      ],
       streamers: [
         "id",
         "streamer_code",

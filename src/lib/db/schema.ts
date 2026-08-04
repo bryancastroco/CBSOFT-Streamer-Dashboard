@@ -142,6 +142,15 @@ export const users = pgTable(
     email: text("email").notNull(),
     fullName: text("full_name"),
     role: userRoleEnum("role").notNull().default("viewer"),
+    /**
+     * Set when an admin switches the account off.
+     *
+     * Soft rather than a delete: `audit_logs.user_id` points here, and the
+     * trail has to outlive the person. Enforced in `getSession()` — hiding a
+     * deactivated user from the roster while their cookie still works would be
+     * theatre.
+     */
+    deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

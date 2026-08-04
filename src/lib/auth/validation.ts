@@ -21,3 +21,29 @@ export const roleChangeSchema = z.object({
 });
 
 export type RoleChangeInput = z.infer<typeof roleChangeSchema>;
+
+export const setActiveSchema = z.object({
+  userId: z.uuid("A valid user is required"),
+  /*
+   * From a hidden form field, so it arrives as the string "true" or "false".
+   * Parsed explicitly rather than with `z.coerce.boolean()`, which treats every
+   * non-empty string as true — including "false", turning a deactivation into a
+   * reactivation.
+   */
+  active: z.enum(["true", "false"]).transform((value) => value === "true"),
+});
+
+export type SetActiveInput = z.infer<typeof setActiveSchema>;
+
+export const inviteUserSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email is required")
+    .pipe(z.email("Enter a valid email address"))
+    .transform((value) => value.toLowerCase()),
+  fullName: z.string().trim().max(120, "Name is too long").optional().default(""),
+  role: z.enum(["admin", "viewer"]),
+});
+
+export type InviteUserInput = z.infer<typeof inviteUserSchema>;

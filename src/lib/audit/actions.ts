@@ -7,6 +7,9 @@
 
 export const AUDIT_ACTIONS = {
   // Phase 2 — identity
+  userInvited: "user.invited",
+  userDeactivated: "user.deactivated",
+  userReactivated: "user.reactivated",
   userRoleChanged: "user.role_changed",
   userSignedIn: "user.signed_in",
   userSignedOut: "user.signed_out",
@@ -60,6 +63,9 @@ export const AUDIT_ENTITY_TYPES = {
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[keyof typeof AUDIT_ENTITY_TYPES];
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  [AUDIT_ACTIONS.userInvited]: "User invited",
+  [AUDIT_ACTIONS.userDeactivated]: "User deactivated",
+  [AUDIT_ACTIONS.userReactivated]: "User reactivated",
   [AUDIT_ACTIONS.userRoleChanged]: "Role changed",
   [AUDIT_ACTIONS.userSignedIn]: "Signed in",
   [AUDIT_ACTIONS.userSignedOut]: "Signed out",

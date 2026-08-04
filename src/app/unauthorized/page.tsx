@@ -18,8 +18,20 @@ export const dynamic = "force-dynamic";
  * loop with `/login`. It reveals nothing beyond the viewer's own role, so
  * being public costs nothing.
  */
-export default async function UnauthorizedPage() {
-  const user = await getCurrentUser();
+export default async function UnauthorizedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string }>;
+}) {
+  const [user, params] = await Promise.all([getCurrentUser(), searchParams]);
+
+  /*
+   * A deactivated account has no session as far as `getSession()` is concerned
+   * — that is the point of the check — so `user` is null here and the generic
+   * "not provisioned" copy would be wrong. The reason travels in the query
+   * string instead, which is safe: it names a state, not a person.
+   */
+  const deactivated = params.reason === "deactivated";
 
   return (
     <main className="flex min-h-svh items-center justify-center p-4">
@@ -27,17 +39,24 @@ export default async function UnauthorizedPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <ShieldAlert className="size-5 text-destructive" aria-hidden />
-            <CardTitle>Not authorised</CardTitle>
+            <CardTitle>{deactivated ? "Account deactivated" : "Not authorised"}</CardTitle>
           </div>
           <CardDescription>
-            {user
-              ? "Your account does not have permission to view that page."
-              : "That page requires permissions your account does not have."}
+            {deactivated
+              ? "This account has been switched off by an administrator."
+              : user
+                ? "Your account does not have permission to view that page."
+                : "That page requires permissions your account does not have."}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {user ? (
+          {deactivated ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing has been deleted — an administrator can restore access at any time. Contact
+              the CBSOFT operations team if you think this is a mistake.
+            </p>
+          ) : user ? (
             <p className="text-sm text-muted-foreground">
               You are signed in as <span className="font-medium text-foreground">{user.email}</span>{" "}
               with the <span className="font-medium text-foreground">{ROLE_LABELS[user.role]}</span>{" "}
@@ -51,9 +70,13 @@ export default async function UnauthorizedPage() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link href="/dashboard">Back to the dashboard</Link>
-            </Button>
+            {/* No way back for a deactivated account — every page would bounce
+                straight here again, which reads as the app being broken. */}
+            {deactivated ? null : (
+              <Button asChild variant="outline">
+                <Link href="/dashboard">Back to the dashboard</Link>
+              </Button>
+            )}
             <SignOutButton variant="ghost" />
           </div>
         </CardContent>
