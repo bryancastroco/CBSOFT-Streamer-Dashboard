@@ -38,13 +38,44 @@ function formatWhen(value: Date | null): string {
   }).format(value);
 }
 
-async function AiHealth({ keyConfigured }: { keyConfigured: boolean }) {
+async function AiHealth({
+  keyConfigured,
+  enabled,
+}: {
+  keyConfigured: boolean;
+  enabled: boolean;
+}) {
   const health = await getAiHealth();
 
   const failing = health.failed > 0;
 
   return (
     <div className="space-y-4">
+      {/*
+       * The kill switch produces silence, not errors: the sweep collects
+       * comments, writes nothing, and reports no failure. So "0 generated" is
+       * indistinguishable from "nothing needed doing" unless this says
+       * otherwise — which is exactly how a switched-off flag went unnoticed
+       * while a rejected API key took the blame.
+       */}
+      {!enabled && health.awaitingAnalysis > 0 ? (
+        <Card className="border-amber-500/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CircleAlert className="size-4 text-amber-600 dark:text-amber-500" aria-hidden />
+              Summarisation is switched off
+            </CardTitle>
+            <CardDescription>
+              {numberFormat.format(health.awaitingAnalysis)} content item
+              {health.awaitingAnalysis === 1 ? " has" : "s have"} comments waiting to be analysed.
+              Nothing is being attempted and no error is raised, because the model is never called.
+              Set <code>AI_SUMMARIZATION_ENABLED</code> to <code>true</code> in Vercel and redeploy
+              — comments are already collected, so they will be analysed on the next sweep.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
+
       <MetricGrid>
         <MetricCard label="Analyses stored" value={numberFormat.format(health.total)} />
         <MetricCard label="Completed" value={numberFormat.format(health.completed)} />
@@ -59,6 +90,12 @@ async function AiHealth({ keyConfigured }: { keyConfigured: boolean }) {
           {...(failing ? { tone: "danger" as const } : {})}
         />
         <MetricCard label="Flagged urgent" value={numberFormat.format(health.urgent)} />
+        <MetricCard
+          label="Awaiting analysis"
+          value={numberFormat.format(health.awaitingAnalysis)}
+          hint="Has comments, no usable summary."
+          {...(health.awaitingAnalysis > 0 ? { tone: "warning" as const } : {})}
+        />
       </MetricGrid>
 
       <p className="text-xs text-muted-foreground">
@@ -114,6 +151,7 @@ export default async function AiSettingsPage() {
 
   const config = describeConfiguration();
   const keyConfigured = config.ai?.rows.find((row) => row.label === "API key")?.present ?? false;
+  const enabled = config.ai?.rows.find((row) => row.label === "Summarisation")?.present ?? false;
 
   return (
     <>
@@ -153,7 +191,7 @@ export default async function AiSettingsPage() {
           description="What the configuration above has actually produced."
         />
         <Suspense fallback={<MetricCardSkeleton />}>
-          <AiHealth keyConfigured={keyConfigured} />
+          <AiHealth keyConfigured={keyConfigured} enabled={enabled} />
         </Suspense>
       </section>
 

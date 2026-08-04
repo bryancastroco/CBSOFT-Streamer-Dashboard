@@ -86,6 +86,15 @@ export type AiHealth = {
   noComments: number;
   failed: number;
   urgent: number;
+  /**
+   * Content that has comments but no usable analysis.
+   *
+   * The figure that makes a silent skip visible. When summarisation is switched
+   * off the sweep collects comments, writes nothing, and reports no error — so
+   * "0 generated" is indistinguishable from "nothing needed doing". This is the
+   * number that tells them apart.
+   */
+  awaitingAnalysis: number;
   lastGeneratedAt: Date | null;
   /** Most recent failures, with the reason. Sanitised at write time. */
   recentFailures: { id: string; error: string | null; at: Date | null }[];
@@ -132,12 +141,36 @@ export async function getAiHealth(): Promise<AiHealth> {
     .orderBy(desc(commentSummaries.generatedAt))
     .limit(5);
 
+  /*
+   * Content holding comments with nothing usable to show for them: either no
+   * summary row at all, or one whose last attempt failed. Counted from
+   * `comments` rather than from `comment_summaries`, because the items that
+   * were never attempted have no summary row to count.
+   */
+  const [waiting] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(
+      sql`(
+        select distinct coalesce(c.post_id::text, c.video_id::text) as content_key,
+               c.post_id, c.video_id
+          from comments c
+      ) as with_comments`,
+    )
+    .where(
+      sql`not exists (
+        select 1 from comment_summaries s
+         where (s.post_id = with_comments.post_id or s.video_id = with_comments.video_id)
+           and s.status in ('completed', 'no_comments')
+      )`,
+    );
+
   return {
     total: totals?.total ?? 0,
     completed: totals?.completed ?? 0,
     noComments: totals?.noComments ?? 0,
     failed: totals?.failed ?? 0,
     urgent: totals?.urgent ?? 0,
+    awaitingAnalysis: waiting?.n ?? 0,
     lastGeneratedAt: tsResult(totals?.lastGeneratedAt),
     recentFailures,
   };
