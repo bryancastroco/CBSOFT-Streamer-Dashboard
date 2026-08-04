@@ -110,6 +110,18 @@
 
 :root {
   /*
+   * Which scheme the browser is painting, for the parts CSS cannot reach —
+   * scrollbars, date pickers, spinner buttons, autofill.
+   *
+   * `next-themes` already sets this inline on `<html>`, and an inline style
+   * wins, so in practice these two declarations are a fallback: they cover the
+   * first paint before hydration and the case where `enableColorScheme` is ever
+   * turned off. Declaring the scheme in the stylesheet that owns the palette is
+   * right regardless of which layer happens to win today.
+   */
+  color-scheme: light;
+
+  /*
    * CBSOFT Blue.
    *
    * Deeper and less saturated than the blue Meta uses, so the product reads as
@@ -223,6 +235,9 @@
 }
 
 .dark {
+  /* Native popups and scrollbars follow the theme. See the note in `:root`. */
+  color-scheme: dark;
+
   /*
    * Dark mode is not the light palette inverted. The brand lifts in lightness
    * so it stays legible on a dark surface, and the subtle tones become dark
