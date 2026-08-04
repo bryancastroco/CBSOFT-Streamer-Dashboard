@@ -91,7 +91,20 @@ const serverEnvSchema = z
 
     /** Gemini. Free tier, which is why it exists as an option here. */
     GEMINI_API_KEY: z.string().min(1).optional(),
-    GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+    /*
+     * An alias, not a pinned id, and deliberately so.
+     *
+     * Google retires model ids and restricts others to existing accounts, so a
+     * pinned name is a default with an expiry date — `gemini-2.5-flash` was
+     * correct when written and rejected weeks later. `gemini-flash-latest`
+     * tracks the current flash variant, which is the right tier for comment
+     * analysis: short inputs, high volume, structured output, no reasoning
+     * requirement.
+     *
+     * If even this is unusable for a given key, the provider discovers a
+     * working model from the API rather than failing.
+     */
+    GEMINI_MODEL: z.string().min(1).default("gemini-flash-latest"),
 
     /**
      * Fall back to in-process analysis when the provider cannot answer.

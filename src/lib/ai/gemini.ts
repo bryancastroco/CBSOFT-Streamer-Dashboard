@@ -186,6 +186,111 @@ export async function listGeminiModels(
   return { ok: true, models };
 }
 
+/**
+ * Whether a rejection means "that model, not your request".
+ *
+ * Google expresses this several ways depending on why the id is unusable —
+ * retired, restricted to existing accounts, or simply never valid — and all of
+ * them are recoverable by choosing a different model rather than by a human
+ * editing configuration.
+ */
+function isModelUnavailable(status: number, message: string): boolean {
+  if (status === 404) return true;
+
+  return /no longer available|not found|is not supported|does not exist|not available for/i.test(
+    message,
+  );
+}
+
+/**
+ * Rank the models a key can use, best first for this workload.
+ *
+ * Comment analysis is short, high volume and needs structured JSON — a "lite"
+ * flash tier is the right shape, and a pro/reasoning tier is money spent on
+ * capability this task does not use. Within a tier, the higher version wins.
+ *
+ * Image, video, audio and embedding variants are excluded outright: they can
+ * appear in the same list and none of them will return an analysis.
+ */
+function rankForAnalysis(models: readonly GeminiModelInfo[]): GeminiModelInfo[] {
+  const usable = models.filter(
+    (model) => !/image|video|tts|live|embedding|veo|imagen|aqa/i.test(model.id),
+  );
+
+  const versionOf = (id: string): number => {
+    const match = id.match(/gemini-(\d+(?:\.\d+)?)/);
+    return match ? Number.parseFloat(match[1]!) : 0;
+  };
+
+  return usable.sort((a, b) => {
+    // A maintained alias outranks any pinned id — it cannot go stale.
+    const aliasA = /latest/.test(a.id) ? 1 : 0;
+    const aliasB = /latest/.test(b.id) ? 1 : 0;
+    if (aliasA !== aliasB) return aliasB - aliasA;
+
+    const liteA = /flash-lite/.test(a.id) ? 1 : 0;
+    const liteB = /flash-lite/.test(b.id) ? 1 : 0;
+    if (liteA !== liteB) return liteB - liteA;
+
+    const flashA = /flash/.test(a.id) ? 1 : 0;
+    const flashB = /flash/.test(b.id) ? 1 : 0;
+    if (flashA !== flashB) return flashB - flashA;
+
+    return versionOf(b.id) - versionOf(a.id);
+  });
+}
+
+/**
+ * A model this key can actually use, remembered for the life of the process.
+ *
+ * Module-level so one discovery serves every later request on a warm instance.
+ * A serverless process is short-lived, so this is a cache rather than state
+ * anything depends on — a cold start simply rediscovers.
+ */
+let resolvedModel: string | null = null;
+
+/** Exposed so a test can start from a known state. */
+export function resetResolvedGeminiModelForTests(): void {
+  resolvedModel = null;
+}
+
+/**
+ * A result that may carry one extra category the rest of the system never sees.
+ *
+ * `model_unavailable` exists only between `request` and `analyzeComments`, to
+ * mark the single failure another model can fix. Leaking it outward would force
+ * every consumer of `AiFailureCategory` to handle a case that is already
+ * handled here.
+ */
+type InternalResult =
+  | AiAnalysisResult
+  | {
+      ok: false;
+      category: "model_unavailable";
+      message: string;
+      retryable: false;
+      provider: typeof PROVIDER;
+      model: string;
+    };
+
+/** Convert the internal marker into a category the contract recognises. */
+function stripInternalCategory(result: InternalResult): AiAnalysisResult {
+  if (result.ok || result.category !== "model_unavailable") return result as AiAnalysisResult;
+
+  return {
+    ok: false,
+    /*
+     * Surfaced as a configuration problem, because by this point the retry has
+     * already been tried and failed — a human does need to look.
+     */
+    category: "invalid_request",
+    message: `${result.message} Open Admin → AI settings and press "List available models" to see what this key can use.`,
+    retryable: false,
+    provider: PROVIDER,
+    model: result.model,
+  };
+}
+
 export class GeminiProvider implements AiProvider {
   readonly name = PROVIDER;
   readonly model: string;
@@ -211,7 +316,6 @@ export class GeminiProvider implements AiProvider {
 
   async analyzeComments(input: AnalyzeCommentsInput): Promise<AiAnalysisResult> {
     const log = childLogger({ component: "ai.gemini", model: this.model });
-    const base = { ok: false as const, provider: PROVIDER, model: this.model };
 
     if (input.messages.length === 0) {
       return {
@@ -223,6 +327,55 @@ export class GeminiProvider implements AiProvider {
         raw: { skipped: "no_comments" },
       };
     }
+
+    // A model discovered earlier in this process wins: the configured one is
+    // already known not to work here.
+    const first = await this.request(input, resolvedModel ?? this.model, log);
+
+    if (first.ok || first.category !== "model_unavailable") {
+      return stripInternalCategory(first);
+    }
+
+    /*
+     * The configured model cannot be used by this key. Rather than surfacing a
+     * failure that needs a human to edit an environment variable and redeploy,
+     * ask the key what it *can* use and retry once.
+     *
+     * Google retires ids and restricts others to existing accounts, so this is
+     * not an exotic case — it is the normal way a pinned model name ends. The
+     * substitution is logged, and the result reports the model that actually
+     * answered rather than the one that was asked for.
+     */
+    const available = await listGeminiModels(this.apiKey);
+
+    if (!available.ok || available.models.length === 0) {
+      return stripInternalCategory(first);
+    }
+
+    const candidate = rankForAnalysis(available.models)[0];
+
+    if (!candidate || candidate.id === (resolvedModel ?? this.model)) {
+      return stripInternalCategory(first);
+    }
+
+    log.warn("ai.gemini.model_substituted", { configured: this.model, using: candidate.id });
+
+    const second = await this.request(input, candidate.id, log);
+
+    // Only remember a model that actually worked. Caching a second failure
+    // would make every later request repeat it.
+    if (second.ok) resolvedModel = candidate.id;
+
+    return stripInternalCategory(second);
+  }
+
+  /** One attempt against one model. */
+  private async request(
+    input: AnalyzeCommentsInput,
+    model: string,
+    log: ReturnType<typeof childLogger>,
+  ): Promise<InternalResult> {
+    const base = { ok: false as const, provider: PROVIDER, model };
 
     const body = {
       systemInstruction: { parts: [{ text: COMMENT_ANALYSIS_SYSTEM_PROMPT }] },
@@ -250,7 +403,7 @@ export class GeminiProvider implements AiProvider {
     let parsed: GeminiResponse;
 
     try {
-      response = await fetch(`${ENDPOINT}/${this.model}:generateContent`, {
+      response = await fetch(`${ENDPOINT}/${model}:generateContent`, {
         method: "POST",
         // Header rather than a query parameter: a key in a URL ends up in
         // access logs, proxy logs and error messages that quote the URL.
@@ -304,6 +457,20 @@ export class GeminiProvider implements AiProvider {
 
       if (status >= 500) {
         return { ...base, category: "unavailable", message: `Gemini: ${message}`, retryable: true };
+      }
+
+      if (isModelUnavailable(status, message)) {
+        /*
+         * Internal only, never returned to a caller. It marks the one failure
+         * another model can fix, so `analyzeComments` retries rather than
+         * asking a human to edit configuration and redeploy.
+         */
+        return {
+          ...base,
+          category: "model_unavailable",
+          message: `Gemini cannot use the model ${model}: ${message}`,
+          retryable: false,
+        };
       }
 
       return {
@@ -368,7 +535,7 @@ export class GeminiProvider implements AiProvider {
     return {
       ok: true,
       analysis: validated.data,
-      model: this.model,
+      model,
       provider: PROVIDER,
       usage: {
         inputTokens: parsed.usageMetadata?.promptTokenCount ?? null,
