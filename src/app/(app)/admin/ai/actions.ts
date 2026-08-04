@@ -3,6 +3,8 @@
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
 import { AI_FAILURE_LABELS } from "@/lib/ai/provider";
 import { getConfiguredProvider } from "@/lib/ai/resolve";
+import { listGeminiModels } from "@/lib/ai/gemini";
+import { getServerEnvSafe } from "@/config/env";
 import { childLogger } from "@/lib/observability/logger";
 
 /**
@@ -29,6 +31,71 @@ import { childLogger } from "@/lib/observability/logger";
  * credential material — see `mapError` in `anthropic.ts` — and the success path
  * reports only the model name and token usage.
  */
+
+export type GeminiModelsState = {
+  status: "idle" | "success" | "error";
+  message: string | null;
+  models: { id: string; displayName: string; description: string; inputTokenLimit: number | null }[];
+  /** What `GEMINI_MODEL` is set to now, so the list can mark it. */
+  configured: string | null;
+};
+
+/**
+ * Ask the key which models it may use.
+ *
+ * A model id that is valid in one Google account and month is a 400 in
+ * another — Google retires ids and restricts others to existing users. No
+ * default survives that, so rather than shipping a guess and correcting it by
+ * round trip, this reads the answer from the key itself.
+ *
+ * The key is used and never returned: only model names and descriptions leave
+ * this function.
+ */
+export async function listGeminiModelsAction(): Promise<GeminiModelsState> {
+  try {
+    await assertAdmin();
+  } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return { status: "error", message: error.message, models: [], configured: null };
+    }
+    throw error;
+  }
+
+  const env = getServerEnvSafe();
+
+  if (!env.ok) {
+    return {
+      status: "error",
+      message: "Configuration is incomplete, so the key could not be read.",
+      models: [],
+      configured: null,
+    };
+  }
+
+  const apiKey = env.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return {
+      status: "error",
+      message: "No GEMINI_API_KEY is configured. Add one in Vercel and redeploy.",
+      models: [],
+      configured: env.env.GEMINI_MODEL,
+    };
+  }
+
+  const outcome = await listGeminiModels(apiKey);
+
+  if (!outcome.ok) {
+    return { status: "error", message: outcome.message, models: [], configured: env.env.GEMINI_MODEL };
+  }
+
+  return {
+    status: "success",
+    message: `${outcome.models.length} model${outcome.models.length === 1 ? "" : "s"} available to this key.`,
+    models: outcome.models,
+    configured: env.env.GEMINI_MODEL,
+  };
+}
 
 export type AiTestState = {
   status: "idle" | "success" | "error";

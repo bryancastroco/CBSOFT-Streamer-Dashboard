@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { CircleAlert } from "lucide-react";
 
+import { GeminiModelList } from "@/app/(app)/admin/ai/model-list";
 import { AiTestButton } from "@/app/(app)/admin/ai/test-button";
 import { ConfigurationBroken, SettingsCard } from "@/components/admin/settings-table";
 import { MetricCard, MetricGrid } from "@/components/data/metric-card";
@@ -152,6 +153,7 @@ export default async function AiSettingsPage() {
   const config = describeConfiguration();
   const keyConfigured = config.ai?.rows.find((row) => row.label === "API key")?.present ?? false;
   const enabled = config.ai?.rows.find((row) => row.label === "Summarisation")?.present ?? false;
+  const provider = config.ai?.rows.find((row) => row.label === "Provider")?.value ?? null;
 
   return (
     <>
@@ -184,6 +186,22 @@ export default async function AiSettingsPage() {
           <AiTestButton />
         </CardContent>
       </Card>
+
+      {provider === "gemini" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Available Gemini models</CardTitle>
+            <CardDescription>
+              Google retires model ids and restricts others to existing accounts, so which name is
+              valid is a property of your key rather than something a default can encode. This asks
+              the key directly.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <GeminiModelList />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="space-y-3">
         <SectionHeader

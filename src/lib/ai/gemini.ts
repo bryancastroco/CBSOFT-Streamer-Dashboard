@@ -117,6 +117,75 @@ function emptyAnalysis(): CommentAnalysis {
   };
 }
 
+export type GeminiModelInfo = {
+  /** Bare id, as `GEMINI_MODEL` wants it — `models/` prefix removed. */
+  id: string;
+  displayName: string;
+  description: string;
+  inputTokenLimit: number | null;
+};
+
+/**
+ * Which models this key may actually use.
+ *
+ * Exists because guessing is not a strategy. Google retires model ids and
+ * restricts others to existing users, so a name that is correct in one account
+ * and month is a 400 in another:
+ *
+ *     This model models/gemini-2.5-flash is no longer available to new users.
+ *
+ * No amount of care in choosing a default survives that — but the key itself
+ * knows the answer, so the product asks rather than shipping a guess that has
+ * to be corrected by round trip.
+ *
+ * Filtered to models that support `generateContent`: an embedding model would
+ * be a valid answer to "what can this key use" and a wrong one to put in
+ * `GEMINI_MODEL`.
+ */
+export async function listGeminiModels(
+  apiKey: string,
+): Promise<{ ok: true; models: GeminiModelInfo[] } | { ok: false; message: string }> {
+  type ListResponse = {
+    models?: {
+      name?: string;
+      displayName?: string;
+      description?: string;
+      inputTokenLimit?: number;
+      supportedGenerationMethods?: string[];
+    }[];
+    error?: { message?: string };
+  };
+
+  let parsed: ListResponse;
+
+  try {
+    const response = await fetch(`${ENDPOINT}?pageSize=200`, {
+      headers: { "x-goog-api-key": apiKey },
+    });
+
+    parsed = (await response.json()) as ListResponse;
+
+    if (!response.ok || parsed.error) {
+      return { ok: false, message: parsed.error?.message ?? `HTTP ${response.status}` };
+    }
+  } catch {
+    return { ok: false, message: "Could not reach the Gemini API." };
+  }
+
+  const models = (parsed.models ?? [])
+    .filter((model) => model.supportedGenerationMethods?.includes("generateContent"))
+    .map((model) => ({
+      id: (model.name ?? "").replace(/^models\//, ""),
+      displayName: model.displayName ?? model.name ?? "",
+      description: model.description ?? "",
+      inputTokenLimit: model.inputTokenLimit ?? null,
+    }))
+    .filter((model) => model.id.length > 0)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  return { ok: true, models };
+}
+
 export class GeminiProvider implements AiProvider {
   readonly name = PROVIDER;
   readonly model: string;
