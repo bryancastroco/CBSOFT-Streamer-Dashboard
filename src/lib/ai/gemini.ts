@@ -52,6 +52,58 @@ type GeminiResponse = {
   error?: { code?: number; message?: string; status?: string };
 };
 
+/**
+ * Keywords Gemini's `responseSchema` refuses.
+ *
+ * It accepts a subset of OpenAPI 3.0 Schema, not JSON Schema, and rejects the
+ * whole request rather than ignoring a field it does not know:
+ *
+ *     Invalid JSON payload received. Unknown name "additionalProperties"
+ *     at 'generation_config.response_schema': Cannot find field.
+ *
+ * `additionalProperties: false` is exactly what Anthropic's strict structured
+ * output wants, so the shared schema legitimately carries it and this provider
+ * has to strip it. Listed rather than allow-listed so a keyword added to the
+ * contract for Anthropic's benefit keeps working here by default, and only a
+ * known-rejected one is removed.
+ */
+const GEMINI_UNSUPPORTED_KEYWORDS = new Set([
+  "additionalProperties",
+  "$schema",
+  "$id",
+  "$ref",
+  "definitions",
+  "patternProperties",
+  "default",
+  "examples",
+  "const",
+  "oneOf",
+  "allOf",
+  "not",
+]);
+
+/**
+ * The shared contract schema, rewritten into what Gemini will accept.
+ *
+ * Recursive and non-mutating: the contract module is shared with the Anthropic
+ * provider, and stripping keywords in place would silently weaken that one's
+ * constraints too.
+ */
+export function toGeminiSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
+
+  if (schema === null || typeof schema !== "object") return schema;
+
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (GEMINI_UNSUPPORTED_KEYWORDS.has(key)) continue;
+    result[key] = toGeminiSchema(value);
+  }
+
+  return result;
+}
+
 /** The deterministic "nothing to read" outcome, produced without a request. */
 function emptyAnalysis(): CommentAnalysis {
   return {
@@ -117,7 +169,7 @@ export class GeminiProvider implements AiProvider {
       ],
       generationConfig: {
         responseMimeType: "application/json",
-        responseSchema: COMMENT_ANALYSIS_JSON_SCHEMA,
+        responseSchema: toGeminiSchema(COMMENT_ANALYSIS_JSON_SCHEMA),
         temperature: 0.2,
       },
     };
