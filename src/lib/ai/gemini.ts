@@ -444,13 +444,21 @@ export class GeminiProvider implements AiProvider {
 
       if (status === 429) {
         /*
-         * Expected on the free tier rather than exceptional. Retryable so the
-         * caller falls back rather than storing a failure.
+         * Routine rather than exceptional, on any tier. Retryable so the caller
+         * falls back or comes back later rather than storing a failure.
+         *
+         * Google's own text is passed through instead of a fixed sentence. This
+         * used to assert "the free tier has a request ceiling", which stopped
+         * being true the moment billing was enabled — and it read as the
+         * explanation while a paid account was hitting a per-minute limit,
+         * pointing at the wrong remedy at exactly the moment one was needed.
+         * The quota that was exceeded is the actionable detail and only Google
+         * knows which one it was.
          */
         return {
           ...base,
           category: "rate_limited",
-          message: "Gemini is rate limiting this application. The free tier has a request ceiling.",
+          message: `Gemini is rate limiting this application: ${message}`,
           retryable: true,
         };
       }
