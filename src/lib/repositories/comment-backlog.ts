@@ -148,14 +148,36 @@ export async function listContentAwaitingAnalysis(limit: number): Promise<Backlo
 export async function countCommentBacklog(): Promise<{
   awaitingCollection: number;
   awaitingAnalysis: number;
+  /**
+   * Of `awaitingCollection`, how much cannot move until a token is replaced.
+   *
+   * Without this the two numbers tell a misleading story. A backlog that stops
+   * falling looks like a broken drain, when what it usually means is that one
+   * Page's credential lapsed and the rest of its history is unreachable. Naming
+   * the blocked portion turns "why has this stalled" into a specific,
+   * actionable answer.
+   */
+  blockedByToken: number;
 }> {
   const db = getDb();
 
-  const collection = await db.execute<{ n: number }>(sql`
-    select (
-      (select count(*) from posts where comments_synced_at is null)
-      + (select count(*) from videos where comments_synced_at is null)
-    )::int as n
+  const collection = await db.execute<{ n: number; blocked: number }>(sql`
+    with pending as (
+      select p.streamer_id from posts p where p.comments_synced_at is null
+      union all
+      select v.streamer_id from videos v where v.comments_synced_at is null
+    )
+    select count(*)::int as n,
+           count(*) filter (
+             where exists (
+               select 1 from streamers s
+                where s.id = pending.streamer_id
+                  and (s.active = false
+                       or s.deleted_at is not null
+                       or s.page_token_last_four is null
+                       or s.token_status in ${sql.raw(`('${UNUSABLE_TOKEN_STATUSES.join("','")}')`)})
+             ))::int as blocked
+      from pending
   `);
 
   const analysis = await db.execute<{ n: number }>(sql`
@@ -171,17 +193,39 @@ export async function countCommentBacklog(): Promise<{
     )::int as n
   `);
 
+  const collectionRow = resultRows<{ n: number; blocked: number }>(collection)[0];
+
   return {
-    awaitingCollection: resultRows<{ n: number }>(collection)[0]?.n ?? 0,
+    awaitingCollection: collectionRow?.n ?? 0,
+    blockedByToken: collectionRow?.blocked ?? 0,
     awaitingAnalysis: resultRows<{ n: number }>(analysis)[0]?.n ?? 0,
   };
 }
 
 /**
- * Streamers worth spending a Graph call on: active, undeleted, holding a token.
+ * Token states that mean a Graph call cannot succeed. Mirrors `sync-all`.
+ *
+ * Expired is the one that matters in practice: the Page still exists, the
+ * content is still there, and every request answers `(190) Session has
+ * expired` until a human signs into Facebook again.
+ */
+const UNUSABLE_TOKEN_STATUSES = ["missing", "expired", "invalid", "missing_permission"] as const;
+
+/**
+ * Streamers worth spending a Graph call on.
  *
  * Mirrors `listSyncableStreamers`. Expressed as a correlated EXISTS rather than
  * a join so the caller's `limit` still means "items", not "rows after a fan-out".
+ *
+ * ## Why the token *status* is checked and not merely its presence
+ *
+ * A Page whose token expired still has one stored, so a presence check admits
+ * it — and because the queue is newest-first, that Page's entire history sits
+ * near the front of the queue failing identically, run after run. The first
+ * real slice spent a fifth of its budget that way. Nothing is lost when those
+ * items are skipped: they stay unmarked and are picked up the moment the token
+ * is replaced. `countCommentBacklog` deliberately still counts them, so a Page
+ * that cannot be collected shows up as a backlog rather than as silence.
  *
  * Presence is read from `page_token_last_four`, never from the ciphertext
  * column. `streamers_token_consistency_check` guarantees the two travel
@@ -196,6 +240,7 @@ function collectableStreamer(column: PgColumn) {
        and s.active = true
        and s.deleted_at is null
        and s.page_token_last_four is not null
+       and s.token_status not in ${sql.raw(`('${UNUSABLE_TOKEN_STATUSES.join("','")}')`)}
   )`;
 }
 

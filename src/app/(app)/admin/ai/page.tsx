@@ -50,7 +50,13 @@ async function AiHealth({
   const [health, backlog] = await Promise.all([getAiHealth(), countCommentBacklog()]);
 
   const failing = health.failed > 0;
-  const draining = backlog.awaitingCollection > 0 || backlog.awaitingAnalysis > 0;
+  /*
+   * Content behind an unusable Page token is not work in progress — no run can
+   * reach it until somebody signs into Facebook again. Counting it as "still
+   * draining" would leave this card warning for ever with no way to clear it.
+   */
+  const reachable = backlog.awaitingCollection - backlog.blockedByToken;
+  const draining = reachable > 0 || backlog.awaitingAnalysis > 0;
 
   return (
     <div className="space-y-4">
@@ -126,19 +132,19 @@ async function AiHealth({
               </>
             ) : (
               <>
-                Nothing is waiting. Every piece of content has had its comments collected and
-                analysed; new content is picked up by the nightly sweep.
+                Nothing reachable is waiting. Every piece of content has had its comments collected
+                and analysed; new content is picked up by the nightly sweep.
               </>
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <MetricGrid>
             <MetricCard
               label="Comments not yet collected"
-              value={numberFormat.format(backlog.awaitingCollection)}
+              value={numberFormat.format(reachable > 0 ? reachable : 0)}
               hint="Posts and videos whose comments edge has never been walked."
-              {...(backlog.awaitingCollection > 0 ? { tone: "warning" as const } : {})}
+              {...(reachable > 0 ? { tone: "warning" as const } : {})}
             />
             <MetricCard
               label="Collected, not yet analysed"
@@ -146,7 +152,32 @@ async function AiHealth({
               hint="Has comments stored; no usable summary yet."
               {...(backlog.awaitingAnalysis > 0 ? { tone: "warning" as const } : {})}
             />
+            <MetricCard
+              label="Blocked by a Page token"
+              value={numberFormat.format(backlog.blockedByToken)}
+              hint="Unreachable until the token is replaced."
+              {...(backlog.blockedByToken > 0 ? { tone: "danger" as const } : {})}
+            />
           </MetricGrid>
+
+          {/*
+           * Named rather than folded into the total. A backlog that stops
+           * falling looks like a broken drain; saying which Page is unreachable
+           * and why turns that into one specific thing to fix.
+           */}
+          {backlog.blockedByToken > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {numberFormat.format(backlog.blockedByToken)} item
+              {backlog.blockedByToken === 1 ? "" : "s"} cannot be collected because the owning
+              Page&rsquo;s token is expired, invalid or missing. They are skipped rather than
+              retried — every attempt would fail identically and spend the run&rsquo;s budget doing
+              it. Replace the token on{" "}
+              <Link href="/admin/streamers" className="underline underline-offset-2">
+                Streamers
+              </Link>{" "}
+              and the next run collects them.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

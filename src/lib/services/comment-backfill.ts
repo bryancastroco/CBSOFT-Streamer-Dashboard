@@ -125,7 +125,7 @@ export type BackfillSummary = {
     unchanged: number;
     failed: number;
   };
-  remaining: { awaitingCollection: number; awaitingAnalysis: number };
+  remaining: { awaitingCollection: number; awaitingAnalysis: number; blockedByToken: number };
   durationMs: number;
   /** Sanitised, and capped. Never a raw Meta or provider payload. */
   errors: { stage: "collection" | "analysis"; message: string }[];
@@ -161,7 +161,7 @@ export async function backfillCommentAnalysis(
     stoppedBecause: "complete",
     collection: { attempted: 0, collected: 0, commentsStored: 0, failed: 0 },
     analysis: { attempted: 0, completed: 0, noComments: 0, unchanged: 0, failed: 0 },
-    remaining: { awaitingCollection: 0, awaitingAnalysis: 0 },
+    remaining: { awaitingCollection: 0, awaitingAnalysis: 0, blockedByToken: 0 },
     durationMs: 0,
     errors: [],
   };
@@ -257,9 +257,18 @@ export async function backfillCommentAnalysis(
    * emptied it, and a run can report a clean pass while new content arrived
    * behind it. Only the remaining counts settle it — and when analysis is
    * switched off, an empty analysis queue is not the same thing as finished.
+   *
+   * Content behind an unusable Page token is subtracted rather than counted
+   * against the drain. It is genuinely unreachable until somebody signs into
+   * Facebook, and treating it as outstanding work would leave `finished` false
+   * for ever — which is the same as having no completion signal at all. The
+   * count is still reported separately, so the shortfall is visible rather than
+   * quietly excused.
    */
+  const reachable = summary.remaining.awaitingCollection - summary.remaining.blockedByToken;
+
   summary.finished =
-    summary.remaining.awaitingCollection === 0 &&
+    reachable <= 0 &&
     summary.remaining.awaitingAnalysis === 0 &&
     stop !== "provider_unavailable" &&
     stop !== "analysis_disabled";

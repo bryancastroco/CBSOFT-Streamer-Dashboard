@@ -53,7 +53,10 @@ const bodySchema = z.object({
   throttle_ms: z.coerce.number().int().min(0).max(60_000).optional(),
   time_budget_ms: z.coerce.number().int().min(1_000).max(280_000).optional(),
   /** Run one stage only. Omit for both. */
-  stages: z.array(z.enum(["collection", "analysis"])).min(1).optional(),
+  stages: z
+    .array(z.enum(["collection", "analysis"]))
+    .min(1)
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -112,6 +115,10 @@ export async function POST(request: Request) {
         remaining: {
           awaiting_collection: summary.remaining.awaitingCollection,
           awaiting_analysis: summary.remaining.awaitingAnalysis,
+          // Of `awaiting_collection`, the part no run can reach until a Page
+          // token is replaced. Reported so a backlog that stops falling has a
+          // stated reason rather than looking like a broken drain.
+          blocked_by_token: summary.remaining.blockedByToken,
         },
         duration_ms: summary.durationMs,
         errors: summary.errors,
@@ -121,7 +128,11 @@ export async function POST(request: Request) {
           throttle_ms: input.throttle_ms ?? BACKFILL_ANALYSIS_THROTTLE_MS,
           time_budget_ms: input.time_budget_ms ?? BACKFILL_TIME_BUDGET_MS,
         },
-        message: describe(summary.finished, summary.stoppedBecause),
+        message: describe(
+          summary.finished,
+          summary.stoppedBecause,
+          summary.remaining.blockedByToken,
+        ),
       },
       200,
       guard.headers,
@@ -139,7 +150,15 @@ export async function POST(request: Request) {
   }
 }
 
-function describe(finished: boolean, stop: string): string {
+function describe(finished: boolean, stop: string, blocked: number): string {
+  if (finished && blocked > 0) {
+    return (
+      `Everything reachable has a stored comment analysis. ${blocked} item(s) remain ` +
+      `behind a Page token that cannot be used — replace it on /admin/streamers and they ` +
+      `will be collected on the next run.`
+    );
+  }
+
   if (finished) return "Every piece of content has a stored comment analysis.";
 
   switch (stop) {

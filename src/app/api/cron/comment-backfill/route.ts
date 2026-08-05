@@ -56,7 +56,11 @@ export async function GET(request: Request) {
    */
   const before = await countCommentBacklog();
 
-  if (before.awaitingCollection === 0 && before.awaitingAnalysis === 0) {
+  // Content behind an unusable token is not work this run can do. Counting it
+  // would mean firing a full invocation every night to re-learn that.
+  const reachable = before.awaitingCollection - before.blockedByToken;
+
+  if (reachable <= 0 && before.awaitingAnalysis === 0) {
     log.info("cron.comment_backfill.nothing_to_do");
 
     return Response.json(
@@ -64,7 +68,11 @@ export async function GET(request: Request) {
         ok: true,
         skipped: true,
         reason: "backlog_empty",
-        message: "Every piece of content already has a stored comment analysis.",
+        blocked_by_token: before.blockedByToken,
+        message:
+          before.blockedByToken > 0
+            ? `Everything reachable already has a stored comment analysis. ${before.blockedByToken} item(s) are behind a Page token that cannot be used.`
+            : "Every piece of content already has a stored comment analysis.",
       },
       { status: 200, headers: { "cache-control": "no-store" } },
     );

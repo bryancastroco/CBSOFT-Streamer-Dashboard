@@ -108,7 +108,11 @@ beforeEach(() => {
   mocks.aiEnabled.value = true;
   mocks.listContentAwaitingCollection.mockResolvedValue([]);
   mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
-  mocks.countCommentBacklog.mockResolvedValue({ awaitingCollection: 0, awaitingAnalysis: 0 });
+  mocks.countCommentBacklog.mockResolvedValue({
+    awaitingCollection: 0,
+    awaitingAnalysis: 0,
+    blockedByToken: 0,
+  });
 });
 
 describe("collection", () => {
@@ -136,15 +140,13 @@ describe("collection", () => {
      * when 40 of them errored would hide a Page-wide problem completely.
      */
     mocks.listContentAwaitingCollection.mockResolvedValue([item("a"), item("b")]);
-    mocks.syncContentComments
-      .mockResolvedValueOnce(collected())
-      .mockResolvedValueOnce({
-        ok: true,
-        result: {
-          ...collected().result,
-          fetchError: { category: "rate_limited", message: "Meta says slow down.", code: 4 },
-        },
-      });
+    mocks.syncContentComments.mockResolvedValueOnce(collected()).mockResolvedValueOnce({
+      ok: true,
+      result: {
+        ...collected().result,
+        fetchError: { category: "rate_limited", message: "Meta says slow down.", code: 4 },
+      },
+    });
 
     const summary = await backfillCommentAnalysis({ stages: ["collection"] });
 
@@ -247,6 +249,7 @@ describe("budgets", () => {
     mocks.countCommentBacklog.mockResolvedValue({
       awaitingCollection: 1_400,
       awaitingAnalysis: 0,
+      blockedByToken: 0,
     });
 
     const summary = await backfillCommentAnalysis({ maxCollect: 2, stages: ["collection"] });
@@ -275,7 +278,11 @@ describe("budgets", () => {
      * new content arrives behind it, and reporting that as finished is how a
      * backlog silently stops being drained.
      */
-    mocks.countCommentBacklog.mockResolvedValue({ awaitingCollection: 0, awaitingAnalysis: 4 });
+    mocks.countCommentBacklog.mockResolvedValue({
+      awaitingCollection: 0,
+      awaitingAnalysis: 4,
+      blockedByToken: 0,
+    });
 
     const summary = await backfillCommentAnalysis({ throttleMs: 0 });
 

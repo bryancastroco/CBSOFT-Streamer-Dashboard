@@ -150,10 +150,43 @@ describe("the collection queue", () => {
   it("ignores content belonging to a streamer with no usable token", async () => {
     // Claiming it would consume a slot in the run's budget to produce a
     // `no_token` outcome and nothing else.
-    await client.query("update streamers set encrypted_page_token = null, page_token_last_four = null, token_status = 'missing'");
+    await client.query(
+      "update streamers set encrypted_page_token = null, page_token_last_four = null, token_status = 'missing'",
+    );
     await seedPost({ handle: "orphan" });
 
     expect(await listContentAwaitingCollection(10)).toHaveLength(0);
+  });
+
+  it.each(["expired", "invalid", "missing_permission"] as const)(
+    "ignores content behind a %s token, which still has ciphertext stored",
+    async (status) => {
+      /*
+       * The case a presence check misses, and the one that actually happened.
+       *
+       * An expired token is still *stored*, so "has a token" admits the Page —
+       * and because the queue is newest-first, that Page's whole history sits
+       * near the front failing identically on every run. The first real slice
+       * spent a fifth of its budget on `(190) Session has expired`.
+       */
+      await client.query("update streamers set token_status = $1", [status]);
+      await seedPost({ handle: "stale-token" });
+
+      expect(await listContentAwaitingCollection(10)).toHaveLength(0);
+    },
+  );
+
+  it("picks the content up again once the token is replaced", async () => {
+    // Skipping must not mean forgetting: the item stays unmarked, so nothing
+    // has to be re-detected when the credential is fixed.
+    await client.query("update streamers set token_status = 'expired'");
+    await seedPost({ handle: "waiting" });
+
+    expect(await listContentAwaitingCollection(10)).toHaveLength(0);
+
+    await client.query("update streamers set token_status = 'valid'");
+
+    expect(await listContentAwaitingCollection(10)).toHaveLength(1);
   });
 
   it("honours the limit", async () => {
@@ -198,7 +231,12 @@ describe("the remaining counts", () => {
   it("counts the two queues separately", async () => {
     await seedPost({ handle: "uncollected" });
     await seedPost({ handle: "collected-unanalysed", collected: true, comments: 3 });
-    await seedPost({ handle: "finished", collected: true, comments: 3, summaryStatus: "completed" });
+    await seedPost({
+      handle: "finished",
+      collected: true,
+      comments: 3,
+      summaryStatus: "completed",
+    });
 
     const counts = await countCommentBacklog();
 
@@ -206,24 +244,43 @@ describe("the remaining counts", () => {
     expect(counts.awaitingAnalysis).toBe(1);
   });
 
-  it("counts a streamer's content even when its token is gone", async () => {
+  it("counts a streamer's content even when its token is gone, and says so", async () => {
     /*
      * Deliberately different from the claiming queries. Those skip a
      * token-less streamer because working on it is futile; the count must not,
      * or a Page with an expired token would silently report a finished backlog
      * while collecting nothing.
+     *
+     * `blockedByToken` is what keeps both of those true at once: the work is
+     * still counted, and the reason it is not moving is stated.
      */
     await seedPost({ handle: "orphan" });
-    await client.query("update streamers set encrypted_page_token = null, page_token_last_four = null, token_status = 'missing'");
+    await client.query("update streamers set token_status = 'expired'");
 
-    expect((await countCommentBacklog()).awaitingCollection).toBe(1);
+    const counts = await countCommentBacklog();
+
+    expect(counts.awaitingCollection).toBe(1);
+    expect(counts.blockedByToken).toBe(1);
     expect(await listContentAwaitingCollection(10)).toHaveLength(0);
+  });
+
+  it("counts nothing as blocked while the token is healthy", async () => {
+    await seedPost({ handle: "fine" });
+
+    const counts = await countCommentBacklog();
+
+    expect(counts.awaitingCollection).toBe(1);
+    expect(counts.blockedByToken).toBe(0);
   });
 
   it("reports zero once everything is settled", async () => {
     await seedPost({ handle: "a", collected: true, comments: 1, summaryStatus: "completed" });
     await seedPost({ handle: "b", collected: true, comments: 0 });
 
-    expect(await countCommentBacklog()).toEqual({ awaitingCollection: 0, awaitingAnalysis: 0 });
+    expect(await countCommentBacklog()).toEqual({
+      awaitingCollection: 0,
+      awaitingAnalysis: 0,
+      blockedByToken: 0,
+    });
   });
 });
