@@ -317,8 +317,16 @@ export async function backfillCommentAnalysis(
        * Only when the provider is healthy and nothing is waiting for a first
        * analysis. An item with no summary at all beats one that already has a
        * readable stand-in, every time.
+       *
+       * And never when the configured provider *is* the local analyser. The
+       * upgrade queue is "summaries whose `ai_provider` is offline", so running
+       * it under `AI_PROVIDER=offline` would rewrite each row with another
+       * offline analysis, leave it in the queue, and do the whole thing again
+       * tomorrow — a nightly loop over hundreds of items that can never finish
+       * and never changes anything. It costs no money, which is precisely why
+       * nobody would notice.
        */
-      if (outcome === null && stages.includes("analysis")) {
+      if (outcome === null && stages.includes("analysis") && env.AI_PROVIDER !== "offline") {
         const upgraded = await upgradeLocalAnalyses({
           deadline,
           throttleMs,

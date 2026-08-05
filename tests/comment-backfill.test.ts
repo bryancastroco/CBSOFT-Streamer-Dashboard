@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   countCommentBacklog: vi.fn(),
   aiEnabled: { value: true },
   offlineFallback: { value: true },
+  provider: { value: "gemini" as string },
 }));
 
 vi.mock("@/lib/services/sync-comments", () => ({
@@ -49,6 +50,7 @@ vi.mock("@/config/env", () => ({
   getServerEnv: () => ({
     AI_SUMMARIZATION_ENABLED: mocks.aiEnabled.value,
     AI_OFFLINE_FALLBACK: mocks.offlineFallback.value,
+    AI_PROVIDER: mocks.provider.value,
   }),
 }));
 
@@ -114,6 +116,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.aiEnabled.value = true;
   mocks.offlineFallback.value = true;
+  mocks.provider.value = "gemini";
   mocks.listContentAwaitingCollection.mockResolvedValue([]);
   mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
   mocks.listSummariesAwaitingUpgrade.mockResolvedValue([]);
@@ -388,6 +391,26 @@ describe("analysis", () => {
     // The two that succeeded alongside the failure are still counted.
     expect(summary.analysis.upgraded).toBe(2);
     expect(summary.analysis.failed).toBe(1);
+  });
+
+  it("never tries to upgrade offline analyses into offline analyses", async () => {
+    /*
+     * The upgrade queue is "summaries whose provider is offline". Running it
+     * under `AI_PROVIDER=offline` rewrites each row with another local
+     * analysis, leaves it in the queue, and repeats the whole thing tomorrow —
+     * a nightly loop over hundreds of items that can never finish and never
+     * changes anything.
+     *
+     * It costs no money, which is exactly why it would go unnoticed.
+     */
+    mocks.provider.value = "offline";
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
+    mocks.listSummariesAwaitingUpgrade.mockResolvedValue([item("a"), item("b")]);
+
+    const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(mocks.listSummariesAwaitingUpgrade).not.toHaveBeenCalled();
+    expect(summary.analysis.upgraded).toBe(0);
   });
 
   it("never upgrades while something has no analysis at all", async () => {
