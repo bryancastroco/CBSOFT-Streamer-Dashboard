@@ -51,6 +51,14 @@ const bodySchema = z.object({
   max_collect: z.coerce.number().int().min(1).max(2000).optional(),
   max_analyses: z.coerce.number().int().min(1).max(500).optional(),
   throttle_ms: z.coerce.number().int().min(0).max(60_000).optional(),
+  /**
+   * Upgrades issued at once. One by default.
+   *
+   * Capped at 10 rather than left open: beyond that the limit stops being the
+   * provider and becomes this function's own memory and socket budget, and a
+   * serverless invocation that dies from exhaustion reports nothing at all.
+   */
+  concurrency: z.coerce.number().int().min(1).max(10).optional(),
   time_budget_ms: z.coerce.number().int().min(1_000).max(280_000).optional(),
   /** Run one stage only. Omit for both. */
   stages: z
@@ -91,6 +99,7 @@ export async function POST(request: Request) {
       ...(input.max_collect !== undefined ? { maxCollect: input.max_collect } : {}),
       ...(input.max_analyses !== undefined ? { maxAnalyses: input.max_analyses } : {}),
       ...(input.throttle_ms !== undefined ? { throttleMs: input.throttle_ms } : {}),
+      ...(input.concurrency !== undefined ? { concurrency: input.concurrency } : {}),
       ...(input.time_budget_ms !== undefined ? { timeBudgetMs: input.time_budget_ms } : {}),
       ...(input.stages ? { stages: input.stages } : {}),
     });

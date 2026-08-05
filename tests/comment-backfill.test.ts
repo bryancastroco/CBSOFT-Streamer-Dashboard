@@ -311,6 +311,85 @@ describe("analysis", () => {
     }
   });
 
+  it("issues upgrades in parallel when asked to", async () => {
+    /*
+     * On a paid tier the limit is generation latency, not a request ceiling —
+     * around twelve seconds for a post carrying five hundred comments. Issuing
+     * those one after another turned a fourteen-hundred item queue into five
+     * hours of waiting on an uncontended round trip.
+     */
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
+    mocks.listSummariesAwaitingUpgrade.mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => item(`u${index}`)),
+    );
+
+    let inFlight = 0;
+    let peak = 0;
+
+    mocks.syncContentComments.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return analysed("completed");
+    });
+
+    const summary = await backfillCommentAnalysis({
+      stages: ["analysis"],
+      throttleMs: 0,
+      concurrency: 3,
+    });
+
+    expect(summary.analysis.upgraded).toBe(6);
+    expect(peak).toBe(3);
+  });
+
+  it("stays sequential by default, which is right on a free tier", async () => {
+    // Guessing high on a free key spends its whole daily allowance at once.
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
+    mocks.listSummariesAwaitingUpgrade.mockResolvedValue([item("a"), item("b"), item("c")]);
+
+    let inFlight = 0;
+    let peak = 0;
+
+    mocks.syncContentComments.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      inFlight -= 1;
+      return analysed("completed");
+    });
+
+    await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(peak).toBe(1);
+  });
+
+  it("finishes a batch before stopping, rather than discarding paid-for work", async () => {
+    /*
+     * The other requests in the batch are already in flight and already
+     * charged. Abandoning their results would throw away work the provider has
+     * done and billed for.
+     */
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
+    mocks.listSummariesAwaitingUpgrade.mockResolvedValue([item("a"), item("b"), item("c")]);
+
+    mocks.syncContentComments
+      .mockResolvedValueOnce(analysisFailed(true))
+      .mockResolvedValue(analysed("completed"));
+
+    const summary = await backfillCommentAnalysis({
+      stages: ["analysis"],
+      throttleMs: 0,
+      concurrency: 3,
+    });
+
+    expect(summary.stoppedBecause).toBe("provider_unavailable");
+    // The two that succeeded alongside the failure are still counted.
+    expect(summary.analysis.upgraded).toBe(2);
+    expect(summary.analysis.failed).toBe(1);
+  });
+
   it("never upgrades while something has no analysis at all", async () => {
     // An empty panel always outranks a readable stand-in.
     mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a")]);

@@ -87,6 +87,23 @@ export const BACKFILL_MAX_ANALYSES = 25;
 export const BACKFILL_ANALYSIS_THROTTLE_MS = 6_500;
 
 /**
+ * Upgrades issued at once.
+ *
+ * One by default, which is correct on a free tier: there the provider's request
+ * ceiling is the binding limit, and parallelism only reaches it sooner.
+ *
+ * On a paid tier the limit is generation latency instead — around twelve
+ * seconds for a post carrying five hundred comments — and that is a wait on a
+ * network round trip, not on anything contended. Raising this is what turns a
+ * fourteen-hundred item queue from five hours into one.
+ *
+ * Deliberately not raised by default. The right value depends on the account's
+ * tier, which this code cannot see, and guessing high on a free key would spend
+ * its whole daily allowance in the first minute.
+ */
+export const BACKFILL_CONCURRENCY = 1;
+
+/**
  * Wall-clock ceiling.
  *
  * Comfortably inside `maxDuration = 300`. A function killed by the platform
@@ -146,6 +163,8 @@ export type BackfillOptions = {
   maxAnalyses?: number | undefined;
   throttleMs?: number | undefined;
   timeBudgetMs?: number | undefined;
+  /** Upgrades issued at once. See `BACKFILL_CONCURRENCY`. */
+  concurrency?: number | undefined;
   /** Run only one stage. Used by the tail pass at the end of a sweep. */
   stages?: readonly ("collection" | "analysis")[] | undefined;
 };
@@ -164,6 +183,7 @@ export async function backfillCommentAnalysis(
   const maxCollect = options.maxCollect ?? BACKFILL_MAX_COLLECT;
   const maxAnalyses = options.maxAnalyses ?? BACKFILL_MAX_ANALYSES;
   const throttleMs = options.throttleMs ?? BACKFILL_ANALYSIS_THROTTLE_MS;
+  const concurrency = options.concurrency ?? BACKFILL_CONCURRENCY;
   const stages = options.stages ?? (["collection", "analysis"] as const);
 
   const summary: BackfillSummary = {
@@ -303,6 +323,7 @@ export async function backfillCommentAnalysis(
           deadline,
           throttleMs,
           maxAnalyses: maxAnalyses - summary.analysis.attempted,
+          concurrency,
           summary,
           note,
           log,
@@ -538,6 +559,7 @@ async function upgradeLocalAnalyses(context: {
   deadline: number;
   throttleMs: number;
   maxAnalyses: number;
+  concurrency: number;
   summary: BackfillSummary;
   note: (stage: "collection" | "analysis", message: string) => void;
   log: ReturnType<typeof childLogger>;
@@ -549,29 +571,65 @@ async function upgradeLocalAnalyses(context: {
 
   if (queue.length === 0) return null;
 
-  log.info("backfill.upgrade.claimed", { items: queue.length });
+  log.info("backfill.upgrade.claimed", {
+    items: queue.length,
+    concurrency: context.concurrency,
+  });
 
-  for (const [index, item] of queue.entries()) {
+  /*
+   * Batched rather than one at a time, because the constraint changed.
+   *
+   * On a free tier the provider's request ceiling was the binding limit and
+   * sequential pacing was the whole point. On a paid tier it is generation
+   * latency — roughly twelve seconds for a post carrying five hundred comments
+   * — and issuing those one after another turns a fourteen-hundred item queue
+   * into five hours of waiting on a network round trip that was never
+   * contended.
+   *
+   * Still batched rather than fully parallel: a batch boundary is where the
+   * deadline and the stop-on-failure rule are honoured, and both need a point
+   * at which nothing is in flight.
+   */
+  const size = Math.max(1, context.concurrency);
+
+  for (let start = 0; start < queue.length; start += size) {
     if (Date.now() >= context.deadline) return "time";
 
-    if (index > 0 && context.throttleMs > 0) {
+    if (start > 0 && context.throttleMs > 0) {
       const remaining = context.deadline - Date.now();
       if (remaining <= context.throttleMs) return "time";
       await sleep(context.throttleMs);
     }
 
-    summary.analysis.attempted += 1;
+    const batch = queue.slice(start, start + size);
+    summary.analysis.attempted += batch.length;
 
-    try {
-      const outcome = await syncContentComments({
-        actorId: null,
-        content: toContentRef(item),
-        skipFetch: true,
-        forceRegenerate: true,
-        allowOfflineFallback: false,
-        // An upgrade that fails must not be worse than not attempting it.
-        preserveExistingOnFailure: true,
-      });
+    const outcomes = await Promise.all(
+      batch.map(async (item) => {
+        try {
+          return await syncContentComments({
+            actorId: null,
+            content: toContentRef(item),
+            skipFetch: true,
+            forceRegenerate: true,
+            allowOfflineFallback: false,
+            // An upgrade that fails must not be worse than not attempting it.
+            preserveExistingOnFailure: true,
+          });
+        } catch (cause) {
+          return { thrown: sanitiseThrown(cause, "The upgrade failed.") } as const;
+        }
+      }),
+    );
+
+    let providerRefused = false;
+
+    for (const outcome of outcomes) {
+      if ("thrown" in outcome) {
+        summary.analysis.failed += 1;
+        note("analysis", outcome.thrown);
+        continue;
+      }
 
       if (outcome.ok && outcome.result.summaryStatus === "completed") {
         summary.analysis.upgraded += 1;
@@ -583,12 +641,16 @@ async function upgradeLocalAnalyses(context: {
         // analysis intact, so a failed upgrade costs nothing a reader can see.
         summary.analysis.failed += 1;
         note("analysis", outcome.result.summaryError ?? "The upgrade failed.");
-        return "provider_unavailable";
+        providerRefused = true;
       }
-    } catch (cause) {
-      summary.analysis.failed += 1;
-      note("analysis", sanitiseThrown(cause, "The upgrade failed."));
     }
+
+    /*
+     * Checked once the batch has settled rather than at the first failure.
+     * The other requests are already in flight and already paid for; abandoning
+     * their results would discard work the provider has done and charged for.
+     */
+    if (providerRefused) return "provider_unavailable";
   }
 
   return null;
