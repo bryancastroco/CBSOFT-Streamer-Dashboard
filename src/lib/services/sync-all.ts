@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { recordAuditLogSafe } from "@/lib/audit/log";
@@ -179,8 +179,73 @@ export class SweepAlreadyRunningError extends Error {
   }
 }
 
+/**
+ * How long a `processing` run may sit before it is presumed dead.
+ *
+ * Generously beyond `maxDuration` (300s), because a run that is genuinely
+ * working is being advanced by repeated invocations and its `started_at` does
+ * not move. Twenty minutes is far longer than any real slice and far shorter
+ * than the gap to the next scheduled sweep.
+ */
+export const SWEEP_ABANDONED_AFTER_MS = 20 * 60 * 1000;
+
+/**
+ * Close runs that a platform kill left open, and say so.
+ *
+ * ## Why this is necessary
+ *
+ * A serverless function killed at `maxDuration` executes no `catch`, no
+ * `finally` and no cleanup — it simply stops. The run row it opened stays
+ * `processing` for ever.
+ *
+ * That is not merely untidy. `sync_runs_one_active_sweep_idx` admits one
+ * top-level run in `queued` or `processing`, and the cron refuses to start
+ * while one is in flight. So a single killed invocation blocks *every*
+ * subsequent sweep, permanently, with no error anywhere — collection simply
+ * stops and the dashboard quietly goes stale.
+ *
+ * It happened: the run opened at 03:17 on 5 August was still `processing`
+ * eighteen hours later, and would have refused every night that followed.
+ *
+ * ## Why `cancelled` rather than `failed`
+ *
+ * Nothing failed. Work was done and recorded — the counters on the row are
+ * real — and the invocation ran out of wall clock. `failed` would demand an
+ * error message describing a fault that did not occur, and would show up in the
+ * health screens as something to investigate.
+ */
+export async function reclaimAbandonedSweeps(): Promise<number> {
+  const db = getDb();
+
+  const cutoff = new Date(Date.now() - SWEEP_ABANDONED_AFTER_MS);
+
+  const reclaimed = await db
+    .update(syncRuns)
+    .set({
+      status: "cancelled",
+      completedAt: new Date(),
+      errorMessage:
+        "Abandoned: the invocation ended without closing this run, most likely a platform " +
+        "timeout. Reclaimed automatically so the next sweep can start.",
+    })
+    .where(
+      and(
+        isNull(syncRuns.streamerId),
+        eq(syncRuns.status, "processing"),
+        lt(syncRuns.startedAt, cutoff),
+      ),
+    )
+    .returning({ id: syncRuns.id });
+
+  return reclaimed.length;
+}
+
 export async function openSyncAllRun(triggerSource: TriggerSource = "n8n"): Promise<string> {
   const db = getDb();
+
+  // Before the insert, so a dead run cannot lose the race to the partial
+  // unique index and turn a recoverable state into a permanent refusal.
+  await reclaimAbandonedSweeps();
 
   try {
     const [run] = await db

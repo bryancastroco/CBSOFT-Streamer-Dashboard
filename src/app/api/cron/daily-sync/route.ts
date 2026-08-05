@@ -10,7 +10,12 @@ import { syncRuns } from "@/lib/db/schema";
 import { childLogger } from "@/lib/observability/logger";
 import { authenticateMachineRequest, machineAuthErrorResponse } from "@/lib/security/machine-auth";
 import { backfillCommentAnalysis } from "@/lib/services/comment-backfill";
-import { openSyncAllRun, resolveSyncCeilings, runSyncAll } from "@/lib/services/sync-all";
+import {
+  openSyncAllRun,
+  reclaimAbandonedSweeps,
+  resolveSyncCeilings,
+  runSyncAll,
+} from "@/lib/services/sync-all";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,6 +80,20 @@ export async function GET(request: Request) {
   const log = childLogger({ component: "cron.daily_sync" });
   const env = getServerEnv();
   const db = getDb();
+
+  /*
+   * ---- Release anything a platform kill left holding the lock -------------
+   *
+   * A function killed at `maxDuration` runs no cleanup, so the run row it
+   * opened stays `processing` for ever — and the check immediately below then
+   * refuses every subsequent sweep, permanently, without raising anything.
+   * Collection just stops and the dashboard quietly goes stale.
+   *
+   * That is not hypothetical: the run opened at 03:17 on 5 August was still
+   * `processing` eighteen hours later.
+   */
+  const reclaimed = await reclaimAbandonedSweeps();
+  if (reclaimed > 0) log.warn("cron.reclaimed_abandoned", { runs: reclaimed });
 
   // ---- Is a sweep already running? ----------------------------------------
   const [inFlight] = await db
