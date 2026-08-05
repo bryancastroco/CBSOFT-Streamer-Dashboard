@@ -261,6 +261,25 @@ describe("analysis", () => {
     }
   });
 
+  it("says so when it claims items and fills none of them", async () => {
+    /*
+     * The local analyser is string counting with no network call, so it cannot
+     * fail on its own. A run that claims work and fills nothing therefore means
+     * something upstream is wrong — and "filled 0" with no error attached gives
+     * nobody anywhere to look. That is exactly how seven posts stuck in
+     * `processing` went unexplained for a while.
+     */
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a")]);
+    mocks.syncContentComments
+      .mockResolvedValueOnce(analysisFailed(true))
+      .mockResolvedValue({ ok: false, reason: "content_not_found", message: "It is gone." });
+
+    const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(summary.analysis.filledLocally).toBe(0);
+    expect(summary.errors.map((entry) => entry.message)).toContain("It is gone.");
+  });
+
   it("leaves them blank when the local analyser is switched off", async () => {
     // `AI_OFFLINE_FALLBACK=false` is an operator saying "a failure should look
     // like a failure". Filling anyway would overrule that.

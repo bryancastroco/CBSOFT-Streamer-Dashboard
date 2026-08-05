@@ -97,9 +97,27 @@ export function shouldRegenerateSummary(params: {
     return { regenerate: true, reason: "comments_changed" };
   }
 
-  // Same comments, but the last attempt never produced anything usable.
-  // Retrying is correct here: the input is unchanged, the *outcome* was absent.
-  if (params.storedStatus === "failed" || params.storedStatus === "pending") {
+  /*
+   * Same comments, but the last attempt never produced anything usable.
+   * Retrying is correct here: the input is unchanged, the *outcome* was absent.
+   *
+   * `processing` belongs in this list and was missing from it, which made those
+   * rows unreachable in both directions. `markSummaryProcessing` writes it
+   * before the model is called, so an invocation killed mid-analysis — a Vercel
+   * function hitting `maxDuration`, a deploy landing mid-flight — leaves it
+   * behind. The backlog query then claims the item for ever (no settled
+   * summary) while this gate declines it for ever (hash matches, status not
+   * retryable), and nothing anywhere reports a problem.
+   *
+   * Seven posts sat in exactly that state, one of them holding 500 collected
+   * comments, until an unattended drain looped on them visibly enough to be
+   * noticed.
+   */
+  if (
+    params.storedStatus === "failed" ||
+    params.storedStatus === "pending" ||
+    params.storedStatus === "processing"
+  ) {
     return { regenerate: true, reason: "previous_attempt_incomplete" };
   }
 

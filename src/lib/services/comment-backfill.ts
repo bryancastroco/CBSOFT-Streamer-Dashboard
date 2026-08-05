@@ -477,6 +477,8 @@ async function fillLocally(context: {
    */
   const queue = await listContentAwaitingAnalysis(Math.max(context.maxAnalyses * 20, 200));
 
+  context.log.info("backfill.fill.claimed", { items: queue.length });
+
   let filled = 0;
 
   for (const item of queue) {
@@ -496,7 +498,23 @@ async function fillLocally(context: {
       if (outcome.ok && outcome.result.summaryStatus !== "failed") {
         filled += 1;
         summary.analysis.filledLocally += 1;
+        continue;
       }
+
+      /*
+       * Recorded rather than counted silently.
+       *
+       * The local analyser cannot fail — it is string counting with no network
+       * call — so a run that claims items and fills none of them means
+       * something upstream of it is wrong, and "filled 0" on its own gives
+       * nobody anywhere to look. That happened once already.
+       */
+      note(
+        "analysis",
+        outcome.ok
+          ? `Local analysis produced ${outcome.result.summaryStatus} for a ${item.type}.`
+          : outcome.message,
+      );
     } catch (cause) {
       note("analysis", sanitiseThrown(cause, "The local analysis failed."));
     }

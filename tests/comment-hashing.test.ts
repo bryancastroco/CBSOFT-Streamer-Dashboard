@@ -185,6 +185,45 @@ describe("when the AI should be called", () => {
     expect(result.regenerate).toBe(true);
   });
 
+  it("retries an attempt abandoned midway, which is the state a kill leaves", () => {
+    /*
+     * The gap that stranded seven posts in production, one of them holding 500
+     * collected comments.
+     *
+     * `markSummaryProcessing` writes `processing` *before* the model is called,
+     * so a function killed mid-analysis — Vercel hitting `maxDuration`, a
+     * deploy landing mid-flight — leaves it behind. With `processing` missing
+     * from this list the row became unreachable in both directions at once: the
+     * backfill queue claimed it for ever because no settled summary existed,
+     * and this gate declined it for ever because the hash matched. Nothing
+     * raised an error, because nothing was failing.
+     */
+    const result = shouldRegenerateSummary({
+      currentSourceHash: hash,
+      storedSourceHash: hash,
+      storedStatus: "processing",
+      forced: false,
+    });
+
+    expect(result).toEqual({ regenerate: true, reason: "previous_attempt_incomplete" });
+  });
+
+  it("still leaves a settled summary alone", () => {
+    // The retry list must not widen into "regenerate whenever unsure" — that
+    // would re-bill every unchanged item on every sweep, which is the entire
+    // thing the hash exists to prevent.
+    for (const status of ["completed", "no_comments"]) {
+      const result = shouldRegenerateSummary({
+        currentSourceHash: hash,
+        storedSourceHash: hash,
+        storedStatus: status,
+        forced: false,
+      });
+
+      expect(result).toEqual({ regenerate: false, reason: "unchanged" });
+    }
+  });
+
   it("forcing wins over every other condition", () => {
     for (const status of ["completed", "failed", "pending", "no_comments", null]) {
       const result = shouldRegenerateSummary({
