@@ -104,7 +104,9 @@ cron invocation, once the sweep's run row is closed, and is also reachable at
 | Stage | Claims | Bounded by | Cost per item |
 |---|---|---|---|
 | Collection | `comments_synced_at IS NULL` | Meta Graph quota | One paginated walk |
-| Analysis | Has comments, no settled summary | Provider requests-per-minute | One model call |
+| Analysis | Has comments, no settled summary | Provider request ceiling | One model call |
+| Local fill | The same queue, after the provider stops | Nothing | A read and a write |
+| Upgrade | `ai_provider = 'offline'` | Provider request ceiling | One model call |
 
 Collection passes `deferAnalysis`, so it spends no model budget; the analysis
 stage picks the work up afterwards at its own pace. Running them as one loop
@@ -127,10 +129,16 @@ permanently with the backlog reading zero.
    too; a rejected key means all fifteen hundred do. Carrying on writes the same
    error against every remaining item and buries one cause under hundreds of
    symptoms. Reported as `stopped_because: provider_unavailable`.
-2. **No offline tally.** The fallback result is stored against the current
-   comment hash, which closes the gate that would bring the real model back — an
-   hour of rate limiting would leave a permanent tally on everything it touched.
-   A reader waiting on a page still gets one; the drain waits instead.
+2. **A local tally is a loan, never a substitution.** When the provider stops,
+   the remaining items are analysed by the deterministic analyser rather than
+   left blank — measured against the real key, a free tier completed *five*
+   analyses and then refused, and several hundred items at one run a night would
+   mean empty panels for months. What makes that safe is the second half: the
+   result records `ai_provider = 'offline'`, `listSummariesAwaitingUpgrade()`
+   finds it again, and the model replaces it as quota allows, newest first.
+   Upgrades never outrank a first analysis, and a failed upgrade leaves the
+   stand-in intact — attempting an improvement must not be worse than not
+   attempting one.
 3. **Content behind an unusable Page token is skipped, and counted.** The
    claiming queries check `token_status`, so an expired credential's history
    cannot sit at the front of the queue failing identically. `blockedByToken` in
