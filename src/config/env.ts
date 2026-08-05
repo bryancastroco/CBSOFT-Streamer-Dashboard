@@ -99,23 +99,23 @@ const serverEnvSchema = z
      * correct when written and rejected weeks later. A `-latest` alias tracks
      * whatever the current variant is.
      *
-     * ## Why Flash-Lite rather than Flash
+     * ## Why not Flash-Lite, which is cheaper
      *
-     * Measured, on 738 real analyses of this project's own comments: Flash
-     * costs $0.0198 each at standard rates, Flash-Lite $0.0053 — and that is
-     * before thinking was switched off. The work is reading comments and
-     * filling a fixed schema, which is extraction and synthesis rather than
-     * reasoning, so the cheaper tier is not a compromise here.
+     * Because `gemini-flash-latest` is the only alias Google's documentation
+     * actually names, and a default that turns out not to exist is how this
+     * project lost three deploy cycles already. A Flash-Lite alias may well
+     * work — measured against Flash it is roughly a quarter of the price, on
+     * work that is extraction rather than judgement — but "may well" is not
+     * good enough for the value every deployment gets by default, and a silent
+     * fall back to Flash would spend four times as much without saying so.
      *
-     * That difference is the whole cost story at scale: one streamer's history
-     * is roughly 1,600 posts, and a roster of thirty is a five-figure number of
-     * analyses. Set `GEMINI_MODEL=gemini-flash-latest` to trade the money back
-     * for a slightly richer summary.
+     * `/admin/ai` → **List available models** reads the true list from the
+     * key in use. Set `GEMINI_MODEL` from that rather than from a guess.
      *
      * If the configured model is unusable for a given key, the provider
      * discovers a working one from the API rather than failing.
      */
-    GEMINI_MODEL: z.string().min(1).default("gemini-flash-lite-latest"),
+    GEMINI_MODEL: z.string().min(1).default("gemini-flash-latest"),
 
     /**
      * Fall back to in-process analysis when the provider cannot answer.
