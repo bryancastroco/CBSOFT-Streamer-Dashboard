@@ -100,6 +100,17 @@ const eslintConfig = defineConfig([
       "src/lib/api/**",
       "src/lib/validation/**",
       "src/app/api/**",
+      /*
+       * Any `route.ts`, not only those under `/api`.
+       *
+       * The rule's own message says a Route Handler may import server-only
+       * modules; `route.ts` is exactly what Next calls a Route Handler, so the
+       * filename is the honest test. The previous `src/app/api/**` was a proxy
+       * for it that happened to hold until `/auth/callback` needed to exist —
+       * an emailed link cannot land under `/api`, because it is a page
+       * navigation and has to be able to redirect into the app.
+       */
+      "src/app/**/route.ts",
       "src/app/**/page.tsx",
       "src/app/**/layout.tsx",
       "src/app/**/actions.ts",

@@ -4,6 +4,7 @@ import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { type UserRole } from "@/lib/auth/roles";
+import { resolveAppOrigin } from "@/lib/config/app-origin";
 import { getDb } from "@/lib/db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { auditLogs, users } from "@/lib/db/schema";
@@ -295,7 +296,24 @@ export async function inviteUser(params: {
 
   const admin = createSupabaseAdminClient();
 
+  /*
+   * `redirectTo` is not optional in practice, and omitting it is what broke the
+   * first invitation sent from production.
+   *
+   * Without it Supabase falls back to the project's Site URL, which was still
+   * `http://localhost:3000` — so the invitee's browser refused the connection.
+   * The click had already spent the one-time token, so the second attempt
+   * reported `otp_expired`, which reads like a link left unopened for a day
+   * rather than one redirected to a machine that was never listening.
+   *
+   * `resolveAppOrigin()` never derives from a request header, so this cannot
+   * become a host-header poisoning vector — an emailed link is precisely where
+   * that would matter.
+   */
+  const redirectTo = `${resolveAppOrigin()}/auth/callback?next=${encodeURIComponent("/auth/set-password")}`;
+
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+    redirectTo,
     ...(params.fullName ? { data: { full_name: params.fullName } } : {}),
   });
 

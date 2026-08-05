@@ -47,3 +47,27 @@ export const inviteUserSchema = z.object({
 });
 
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
+
+/**
+ * Choosing a password on an invitation.
+ *
+ * Length and equality only. Composition rules — character classes, breach
+ * lists, minimum length beyond this — belong to Supabase Auth, which owns the
+ * policy and enforces it on `updateUser`. Restating them here would drift the
+ * moment the project's setting changed, and the drift would show up as a form
+ * that accepts a password the server then rejects.
+ *
+ * Eight is Supabase's own default floor, so this catches the common mistake in
+ * the browser without pretending to be the authority.
+ */
+export const setPasswordSchema = z
+  .object({
+    password: z.string().min(8, "Use at least 8 characters"),
+    confirm: z.string().min(1, "Confirm your password"),
+  })
+  .refine((value) => value.password === value.confirm, {
+    message: "Those passwords do not match",
+    path: ["confirm"],
+  });
+
+export type SetPasswordInput = z.infer<typeof setPasswordSchema>;

@@ -12,6 +12,8 @@ export const AUDIT_ACTIONS = {
   userReactivated: "user.reactivated",
   userRoleChanged: "user.role_changed",
   userSignedIn: "user.signed_in",
+  /** An invitee chose their first password. Never records the password. */
+  userPasswordSet: "user.password_set",
   userSignedOut: "user.signed_out",
   userSignInFailed: "user.sign_in_failed",
   /** Phase 10: refused by the login throttle before credentials were checked. */
@@ -85,6 +87,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.userReactivated]: "User reactivated",
   [AUDIT_ACTIONS.userRoleChanged]: "Role changed",
   [AUDIT_ACTIONS.userSignedIn]: "Signed in",
+  [AUDIT_ACTIONS.userPasswordSet]: "Password set",
   [AUDIT_ACTIONS.userSignedOut]: "Signed out",
   [AUDIT_ACTIONS.userSignInFailed]: "Sign-in failed",
   [AUDIT_ACTIONS.userSignInThrottled]: "Sign-in throttled",
