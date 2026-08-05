@@ -37,9 +37,16 @@ function FindingList({ title, items }: { title: string; items: readonly string[]
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-medium text-muted-foreground">{title}</h4>
-      <ul className="space-y-1.5">
+      {/*
+       * `list-disc pl-4` matches the per-post analysis card exactly. Tailwind's
+       * reset strips list markers, so a bare `<ul>` renders as unmarked lines —
+       * which reads as prose that happens to be wrapped oddly rather than as a
+       * list of distinct findings, and looked like the model had failed to
+       * separate them.
+       */}
+      <ul className="list-disc space-y-1 pl-4 text-sm">
         {findings.map((item, index) => (
-          <li key={`${title}-${index}`} className="text-sm leading-snug">
+          <li key={`${title}-${index}`} className="leading-snug">
             {item}
           </li>
         ))}
@@ -145,9 +152,9 @@ export function CommentOverviewPanel({ overview }: { overview: CommentOverview }
               <TriangleAlert className="size-3.5" aria-hidden />
               Flagged as urgent
             </h4>
-            <ul className="mt-2 space-y-1.5">
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
               {urgent.map((item, index) => (
-                <li key={`urgent-${index}`} className="text-sm leading-snug">
+                <li key={`urgent-${index}`} className="leading-snug">
                   {item}
                 </li>
               ))}
