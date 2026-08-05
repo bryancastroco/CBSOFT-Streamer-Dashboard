@@ -228,3 +228,83 @@ describe("failures that are not about the model", () => {
     expect(fetchMock.mock.calls).toHaveLength(1);
   });
 });
+
+describe("a model that will not switch thinking off", () => {
+  /** Gemini's answer when `thinkingBudget` is not supported. */
+  function invalidArgument() {
+    return {
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: { code: 400, message: "Request contains an invalid argument." },
+      }),
+    };
+  }
+
+  it("retries without the option instead of failing", async () => {
+    /*
+     * `thinkingBudget: 0` is worth roughly four fifths of the cost of an
+     * analysis — thinking tokens bill at the output rate and outnumber the
+     * answer six to one. But it is not universally accepted, and which model a
+     * `-latest` alias resolves to is a property of the caller's key.
+     *
+     * Asserting it was "safely ignored" was wrong, and swapping in a key from
+     * another account proved it within one request. Paying more beats a panel
+     * that cannot render.
+     */
+    fetchMock.mockResolvedValueOnce(invalidArgument()).mockResolvedValueOnce(generateOk());
+
+    const result = await provider().analyzeComments({ messages: ["ano po?"] });
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls).toHaveLength(2);
+
+    const sent = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      generationConfig: Record<string, unknown>;
+    };
+    expect(sent.generationConfig["thinkingConfig"]).toBeUndefined();
+  });
+
+  it("asks for it on the first attempt, because it is the cheaper path", async () => {
+    fetchMock.mockResolvedValueOnce(generateOk());
+
+    await provider().analyzeComments({ messages: ["ano po?"] });
+
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      generationConfig: { thinkingConfig?: { thinkingBudget?: number } };
+    };
+    expect(sent.generationConfig.thinkingConfig?.thinkingBudget).toBe(0);
+  });
+
+  it("remembers the refusal, so the next call does not waste a request", async () => {
+    fetchMock
+      .mockResolvedValueOnce(invalidArgument())
+      .mockResolvedValueOnce(generateOk())
+      .mockResolvedValueOnce(generateOk());
+
+    await provider().analyzeComments({ messages: ["one"] });
+    const after = fetchMock.mock.calls.length;
+
+    await provider().analyzeComments({ messages: ["two"] });
+
+    // One request, not two: the option is already known to be unusable here.
+    expect(fetchMock.mock.calls.length).toBe(after + 1);
+  });
+
+  it("does not strip the option for an unrelated bad request", async () => {
+    // A malformed schema is a real fault and must stay loud rather than being
+    // retried into a differently-shaped failure.
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: { code: 400, message: 'Unknown name "additionalProperties" at schema.' },
+      }),
+    });
+
+    const result = await provider().analyzeComments({ messages: ["hello"] });
+
+    expect(result.ok).toBe(false);
+    expect(fetchMock.mock.calls).toHaveLength(1);
+  });
+});

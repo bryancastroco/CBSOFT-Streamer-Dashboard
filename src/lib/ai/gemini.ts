@@ -249,9 +249,39 @@ function rankForAnalysis(models: readonly GeminiModelInfo[]): GeminiModelInfo[] 
  */
 let resolvedModel: string | null = null;
 
+/**
+ * Whether this key's model accepts `thinkingConfig`.
+ *
+ * Assumed true and demoted on the first rejection, module-level for the same
+ * reason as `resolvedModel`: one discovery per warm instance rather than a
+ * wasted round trip on every request.
+ *
+ * Optimistic by default because disabling thinking is worth roughly four fifths
+ * of the cost of an analysis, and the models that reject it are the exception.
+ */
+let thinkingSupported = true;
+
+/**
+ * Does this rejection mean the *option* was unacceptable, not the request?
+ *
+ * Google answers an unsupported `thinkingBudget` with a bare
+ * `Request contains an invalid argument`, which says nothing about which
+ * argument. Matching it is therefore broad by necessity — but it only ever
+ * triggers one retry with a smaller body, so a false positive costs a request
+ * and a false negative costs the feature.
+ */
+function isConfigRejected(result: { ok: false; category: string; message: string }): boolean {
+  if (result.category !== "invalid_request") return false;
+
+  return /invalid argument|thinking|thinking_budget|thinkingBudget|not supported/i.test(
+    result.message,
+  );
+}
+
 /** Exposed so a test can start from a known state. */
 export function resetResolvedGeminiModelForTests(): void {
   resolvedModel = null;
+  thinkingSupported = true;
 }
 
 /**
@@ -330,7 +360,32 @@ export class GeminiProvider implements AiProvider {
 
     // A model discovered earlier in this process wins: the configured one is
     // already known not to work here.
-    const first = await this.request(input, resolvedModel ?? this.model, log);
+    const model = resolvedModel ?? this.model;
+
+    let first = await this.request(input, model, log, thinkingSupported);
+
+    /*
+     * ---- The request was fine; the *option* was not ----------------------
+     *
+     * `thinkingConfig: { thinkingBudget: 0 }` cuts the cost of an analysis by
+     * roughly four fifths, because thinking tokens bill at the output rate and
+     * outnumber the answer six to one. But it is not universally accepted — a
+     * model that cannot disable thinking rejects the whole request with
+     * `Request contains an invalid argument`, and which model a `-latest`
+     * alias resolves to is a property of the caller's key.
+     *
+     * I asserted this field was safely ignored by models that do not support
+     * it. It is not, and swapping in a key from a different account proved it
+     * within one request.
+     *
+     * So: retry once without it, and remember for the rest of the process.
+     * Paying more is a far better outcome than a panel that cannot render.
+     */
+    if (!first.ok && thinkingSupported && isConfigRejected(first)) {
+      log.warn("ai.gemini.thinking_unsupported", { model });
+      thinkingSupported = false;
+      first = await this.request(input, model, log, false);
+    }
 
     if (first.ok || first.category !== "model_unavailable") {
       return stripInternalCategory(first);
@@ -360,7 +415,7 @@ export class GeminiProvider implements AiProvider {
 
     log.warn("ai.gemini.model_substituted", { configured: this.model, using: candidate.id });
 
-    const second = await this.request(input, candidate.id, log);
+    const second = await this.request(input, candidate.id, log, thinkingSupported);
 
     // Only remember a model that actually worked. Caching a second failure
     // would make every later request repeat it.
@@ -374,6 +429,13 @@ export class GeminiProvider implements AiProvider {
     input: AnalyzeCommentsInput,
     model: string,
     log: ReturnType<typeof childLogger>,
+    /**
+     * Whether to ask for thinking to be switched off.
+     *
+     * Optional because not every model accepts the field. See the retry in
+     * `analyzeComments`.
+     */
+    disableThinking = true,
   ): Promise<InternalResult> {
     const base = { ok: false as const, provider: PROVIDER, model };
 
@@ -411,10 +473,13 @@ export class GeminiProvider implements AiProvider {
          * and the constrained `responseSchema` already does the structural
          * work a chain of thought would otherwise be doing.
          *
-         * Models before the thinking generation ignore this field rather
-         * than rejecting it, so it is safe across the `-latest` alias moving.
+         * NOT universally accepted, which I asserted and was wrong about.
+         * Some models reject an unsupported `thinkingBudget` outright with
+         * `Request contains an invalid argument`, and because the `-latest`
+         * alias resolves differently per key, whether it works is a property
+         * of the caller's account. `analyzeComments` retries without it.
          */
-        thinkingConfig: { thinkingBudget: 0 },
+        ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
       },
     };
 
