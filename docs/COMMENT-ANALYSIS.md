@@ -86,6 +86,61 @@ Two further cases skip the model outright:
 
 ---
 
+## 3b. The unattended backfill
+
+The nightly sweep refreshes comments for the **ten newest posts and ten newest
+videos per streamer**. That ceiling is right for a sweep — each item costs its
+own paginated walk of the comments edge, and engagement on a Facebook post is
+heavily front-loaded — but on its own it means content outside that window is
+never reached at all. A roster of sixteen hundred posts stayed at ten collected
+for weeks, and no number of nights would have changed that.
+
+`services/comment-backfill.ts` walks the rest. It runs at the end of the nightly
+cron invocation, once the sweep's run row is closed, and is also reachable at
+`POST /api/automation/comments/backfill` and `GET /api/cron/comment-backfill`.
+
+**Two stages, because they are bounded by different resources.**
+
+| Stage | Claims | Bounded by | Cost per item |
+|---|---|---|---|
+| Collection | `comments_synced_at IS NULL` | Meta Graph quota | One paginated walk |
+| Analysis | Has comments, no settled summary | Provider requests-per-minute | One model call |
+
+Collection passes `deferAnalysis`, so it spends no model budget; the analysis
+stage picks the work up afterwards at its own pace. Running them as one loop
+would drag the whole drain down to the model's rate.
+
+**Progress lives in the data, not a checkpoint.** `posts.comments_synced_at` and
+`videos.comments_synced_at` (migration 0014) record that the edge was walked.
+The column exists because a post with no comment rows is otherwise ambiguous —
+never collected, or collected and genuinely silent — and a drain that cannot
+tell those apart re-walks the silent posts for ever and never reaches the rest.
+
+The marker is written **only after a walk that produced an answer**. A rate limit
+or an expired token arrives as `fetched.error` rather than an exception, so
+stamping unconditionally would mark a failed item done and lose its comments
+permanently with the backlog reading zero.
+
+**Three rules that only matter when nobody is watching:**
+
+1. **A provider failure ends the stage.** A rate limit means the next fifty fail
+   too; a rejected key means all fifteen hundred do. Carrying on writes the same
+   error against every remaining item and buries one cause under hundreds of
+   symptoms. Reported as `stopped_because: provider_unavailable`.
+2. **No offline tally.** The fallback result is stored against the current
+   comment hash, which closes the gate that would bring the real model back — an
+   hour of rate limiting would leave a permanent tally on everything it touched.
+   A reader waiting on a page still gets one; the drain waits instead.
+3. **Content behind an unusable Page token is skipped, and counted.** The
+   claiming queries check `token_status`, so an expired credential's history
+   cannot sit at the front of the queue failing identically. `blockedByToken` in
+   `countCommentBacklog()` reports the shortfall, so a backlog that stops falling
+   says which Page needs signing into again rather than looking like a bug.
+
+Progress is visible on **`/admin/ai`** under *Automatic backfill*.
+
+---
+
 ## 4. The provider abstraction
 
 ```
@@ -155,6 +210,8 @@ code so a model that returns an empty list still renders correctly:
 | `POST /api/admin/posts/{id}/regenerate-summary` | admin | Re-analyses the stored comments, bypassing the gate |
 | `POST /api/admin/videos/{id}/sync-comments` | admin | Same, for a video |
 | `POST /api/admin/videos/{id}/regenerate-summary` | admin | Same, for a video |
+| `POST /api/automation/comments/backfill` | `N8N_API_SECRET` | One bounded slice of the drain. Repeat until `finished` is true |
+| `GET /api/cron/comment-backfill` | `CRON_SECRET` | Same, started in the background and returning immediately |
 
 The video pair are thin wrappers: they resolve a `ContentRef` and call the same
 service. The only difference between the two pairs is which table the id is
