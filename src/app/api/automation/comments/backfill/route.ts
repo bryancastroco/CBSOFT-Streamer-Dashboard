@@ -111,6 +111,10 @@ export async function POST(request: Request) {
           no_comments: summary.analysis.noComments,
           already_current: summary.analysis.unchanged,
           failed: summary.analysis.failed,
+          // Analysed locally because the provider was unavailable. Readable
+          // now, and re-claimed for a model summary when quota allows.
+          filled_locally: summary.analysis.filledLocally,
+          upgraded_from_local: summary.analysis.upgraded,
         },
         remaining: {
           awaiting_collection: summary.remaining.awaitingCollection,
@@ -119,6 +123,8 @@ export async function POST(request: Request) {
           // token is replaced. Reported so a backlog that stops falling has a
           // stated reason rather than looking like a broken drain.
           blocked_by_token: summary.remaining.blockedByToken,
+          // Have an analysis; it is a local tally rather than a model summary.
+          awaiting_upgrade: summary.remaining.awaitingUpgrade,
         },
         duration_ms: summary.durationMs,
         errors: summary.errors,

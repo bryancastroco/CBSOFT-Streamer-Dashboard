@@ -281,6 +281,7 @@ describe("the remaining counts", () => {
       awaitingCollection: 0,
       awaitingAnalysis: 0,
       blockedByToken: 0,
+      awaitingUpgrade: 0,
     });
   });
 });

@@ -3,7 +3,7 @@ import "server-only";
 import { getServerEnv } from "@/config/env";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { recordAuditLogSafe } from "@/lib/audit/log";
-import { analyzeWithFallback } from "@/lib/ai/resolve";
+import { analyzeWithFallback, OfflineProvider } from "@/lib/ai/resolve";
 import { emptyAnalysis } from "@/lib/ai/contract";
 import type { ContentRef } from "@/lib/comments/content-ref";
 import {
@@ -115,6 +115,25 @@ export async function syncContentComments(params: {
    * limiting would permanently downgrade everything it touched.
    */
   allowOfflineFallback?: boolean;
+  /**
+   * Analyse locally without consulting the provider at all.
+   *
+   * Used by the backfill once the provider has already refused this run: going
+   * back through it would spend one more failing request per item to learn
+   * something already known. The result records `provider: "offline"`, which is
+   * what lets it be found and replaced later.
+   */
+  useOfflineAnalyser?: boolean;
+  /**
+   * Leave the stored analysis alone if this attempt fails.
+   *
+   * For the upgrade pass, where a stand-in already exists. Overwriting it with
+   * a failure row would make a failed upgrade strictly worse for the reader
+   * than never attempting one — the panel goes from a readable tally to
+   * nothing. The failure is still returned to the caller and recorded in the
+   * run summary; it simply is not written over something better.
+   */
+  preserveExistingOnFailure?: boolean;
 }): Promise<SyncCommentsOutcome> {
   const env = getServerEnv();
 
@@ -280,11 +299,19 @@ export async function syncContentComments(params: {
     };
   }
 
-  await markSummaryProcessing({
-    content: params.content,
-    sourceHash,
-    commentCount: stored.length,
-  });
+  /*
+   * The in-flight marker exists so a crashed run leaves `processing` behind
+   * rather than a stale `completed`. It is skipped when the caller is
+   * protecting an existing analysis, because writing it would destroy the very
+   * thing being protected before the attempt has even been made.
+   */
+  if (!params.preserveExistingOnFailure) {
+    await markSummaryProcessing({
+      content: params.content,
+      sourceHash,
+      commentCount: stored.length,
+    });
+  }
 
   // Only message text is passed. `stored` carries no identity fields.
   const messages = stored
@@ -327,21 +354,27 @@ export async function syncContentComments(params: {
    * reason unrelated to the comments — an empty balance, a free-tier ceiling,
    * an outage. A rejected key or a malformed request still fails loudly.
    */
-  const analysis = await analyzeWithFallback(
-    { messages },
-    { allowOffline: params.allowOfflineFallback ?? true },
-  );
+  const analysis = params.useOfflineAnalyser
+    ? await new OfflineProvider().analyzeComments({ messages })
+    : await analyzeWithFallback(
+        { messages },
+        { allowOffline: params.allowOfflineFallback ?? true },
+      );
 
   const entityType =
     params.content.type === "post" ? AUDIT_ENTITY_TYPES.post : AUDIT_ENTITY_TYPES.video;
 
   if (!analysis.ok) {
-    await saveSummaryFailure({
-      content: params.content,
-      sourceHash,
-      commentCount: stored.length,
-      message: analysis.message,
-    });
+    // Skipped when a better stored analysis is being protected. See
+    // `preserveExistingOnFailure`.
+    if (!params.preserveExistingOnFailure) {
+      await saveSummaryFailure({
+        content: params.content,
+        sourceHash,
+        commentCount: stored.length,
+        message: analysis.message,
+      });
+    }
 
     log.warn("summary.failed", { category: analysis.category, retryable: analysis.retryable });
 

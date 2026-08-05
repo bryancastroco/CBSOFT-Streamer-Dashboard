@@ -16,18 +16,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *      limit means the next fifty fail too — and carrying on writes the same
  *      error against every remaining item, burying one cause under hundreds of
  *      symptoms.
- *   3. The unattended path never accepts an offline tally. The tally is stored
- *      against the current comment hash, which closes the gate that would bring
- *      the real model back; an hour of rate limiting would leave a permanent
- *      tally behind with nothing in the data saying so.
+ *   3. A local tally is a loan, never a substitution. It is stored against the
+ *      current comment hash, which closes the ordinary regeneration gate — so
+ *      it is recorded as `offline` and re-claimed for a model summary later.
+ *      Without that second half, an hour of rate limiting would leave a
+ *      permanent tally behind with nothing in the data saying so.
  */
 
 const mocks = vi.hoisted(() => ({
   syncContentComments: vi.fn(),
   listContentAwaitingCollection: vi.fn(),
   listContentAwaitingAnalysis: vi.fn(),
+  listSummariesAwaitingUpgrade: vi.fn(),
   countCommentBacklog: vi.fn(),
   aiEnabled: { value: true },
+  offlineFallback: { value: true },
 }));
 
 vi.mock("@/lib/services/sync-comments", () => ({
@@ -37,12 +40,16 @@ vi.mock("@/lib/services/sync-comments", () => ({
 vi.mock("@/lib/repositories/comment-backlog", () => ({
   listContentAwaitingCollection: mocks.listContentAwaitingCollection,
   listContentAwaitingAnalysis: mocks.listContentAwaitingAnalysis,
+  listSummariesAwaitingUpgrade: mocks.listSummariesAwaitingUpgrade,
   countCommentBacklog: mocks.countCommentBacklog,
   toContentRef: (item: { type: string; id: string }) => ({ type: item.type, id: item.id }),
 }));
 
 vi.mock("@/config/env", () => ({
-  getServerEnv: () => ({ AI_SUMMARIZATION_ENABLED: mocks.aiEnabled.value }),
+  getServerEnv: () => ({
+    AI_SUMMARIZATION_ENABLED: mocks.aiEnabled.value,
+    AI_OFFLINE_FALLBACK: mocks.offlineFallback.value,
+  }),
 }));
 
 const { backfillCommentAnalysis } = await import("@/lib/services/comment-backfill");
@@ -106,12 +113,15 @@ beforeEach(() => {
   // queued value survives into the next test and answers its first call.
   vi.resetAllMocks();
   mocks.aiEnabled.value = true;
+  mocks.offlineFallback.value = true;
   mocks.listContentAwaitingCollection.mockResolvedValue([]);
   mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
+  mocks.listSummariesAwaitingUpgrade.mockResolvedValue([]);
   mocks.countCommentBacklog.mockResolvedValue({
     awaitingCollection: 0,
     awaitingAnalysis: 0,
     blockedByToken: 0,
+    awaitingUpgrade: 0,
   });
 });
 
@@ -186,30 +196,111 @@ describe("analysis", () => {
     expect(call.allowOfflineFallback).toBe(false);
   });
 
-  it("stops the whole stage on the first provider failure", async () => {
+  /** Calls that went to the provider, as opposed to the local analyser. */
+  function providerCalls() {
+    return mocks.syncContentComments.mock.calls.filter((call) => !call[0].useOfflineAnalyser);
+  }
+
+  function localCalls() {
+    return mocks.syncContentComments.mock.calls.filter(
+      (call) => call[0].useOfflineAnalyser === true,
+    );
+  }
+
+  it("stops asking the provider after the first failure", async () => {
     mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a"), item("b"), item("c")]);
     mocks.syncContentComments
       .mockResolvedValueOnce(analysed("completed"))
       .mockResolvedValueOnce(analysisFailed(true))
-      .mockResolvedValueOnce(analysed("completed"));
+      .mockResolvedValue(analysed("completed"));
 
     const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
 
     expect(summary.stoppedBecause).toBe("provider_unavailable");
-    expect(summary.analysis.attempted).toBe(2);
-    // The third item was never tried: the failure was about the provider, not
-    // about that item, and attempting it would have produced the same error.
-    expect(mocks.syncContentComments).toHaveBeenCalledTimes(2);
+    // Two provider calls: the success and the failure. The third item was never
+    // offered to it — the failure was about the provider, not about that item,
+    // and asking again would have produced the same error.
+    expect(providerCalls()).toHaveLength(2);
   });
 
-  it("stops on a rejected key too, rather than failing every remaining item", async () => {
+  it("stops asking on a rejected key too", async () => {
     mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a"), item("b")]);
     mocks.syncContentComments.mockResolvedValue(analysisFailed(false));
 
     const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
 
     expect(summary.stoppedBecause).toBe("provider_unavailable");
-    expect(mocks.syncContentComments).toHaveBeenCalledTimes(1);
+    expect(providerCalls()).toHaveLength(1);
+  });
+
+  it("fills the rest locally rather than leaving them blank", async () => {
+    /*
+     * Measured, not hypothetical: this deployment's free-tier key completed
+     * five analyses and then refused for as long as it was asked. Waiting for
+     * quota at one scheduled run a night would leave most posts showing an
+     * empty panel for months.
+     *
+     * The local tally is a loan, not a substitution — it is recorded as
+     * `offline` and re-claimed for a model summary later.
+     */
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a"), item("b"), item("c")]);
+    mocks.syncContentComments
+      .mockResolvedValueOnce(analysisFailed(true))
+      .mockResolvedValue(analysed("completed"));
+
+    const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(summary.stoppedBecause).toBe("provider_unavailable");
+    expect(summary.analysis.filledLocally).toBe(3);
+
+    for (const call of localCalls()) {
+      // Forced, because the item may carry the `failed` row from the request
+      // that just exhausted the quota.
+      expect(call[0].forceRegenerate).toBe(true);
+      expect(call[0].skipFetch).toBe(true);
+    }
+  });
+
+  it("leaves them blank when the local analyser is switched off", async () => {
+    // `AI_OFFLINE_FALLBACK=false` is an operator saying "a failure should look
+    // like a failure". Filling anyway would overrule that.
+    mocks.offlineFallback.value = false;
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a"), item("b")]);
+    mocks.syncContentComments.mockResolvedValue(analysisFailed(true));
+
+    const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(summary.analysis.filledLocally).toBe(0);
+    expect(localCalls()).toHaveLength(0);
+  });
+
+  it("replaces a local tally once the provider is answering again", async () => {
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([]);
+    mocks.listSummariesAwaitingUpgrade.mockResolvedValue([item("a"), item("b")]);
+    mocks.syncContentComments.mockResolvedValue(analysed("completed"));
+
+    const summary = await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(summary.analysis.upgraded).toBe(2);
+
+    for (const call of mocks.syncContentComments.mock.calls) {
+      // Forced past the hash gate: the stored summary is `completed` against
+      // the current comments, so every other caller correctly sees `unchanged`.
+      expect(call[0].forceRegenerate).toBe(true);
+      // And a failed upgrade must not be worse than not attempting one.
+      expect(call[0].preserveExistingOnFailure).toBe(true);
+    }
+  });
+
+  it("never upgrades while something has no analysis at all", async () => {
+    // An empty panel always outranks a readable stand-in.
+    mocks.listContentAwaitingAnalysis.mockResolvedValue([item("a")]);
+    mocks.listSummariesAwaitingUpgrade.mockResolvedValue([item("b")]);
+    mocks.syncContentComments.mockResolvedValue(analysisFailed(true));
+
+    await backfillCommentAnalysis({ stages: ["analysis"], throttleMs: 0 });
+
+    expect(mocks.listSummariesAwaitingUpgrade).not.toHaveBeenCalled();
   });
 
   it("does not count an item the hash gate settled as work done", async () => {
@@ -250,6 +341,7 @@ describe("budgets", () => {
       awaitingCollection: 1_400,
       awaitingAnalysis: 0,
       blockedByToken: 0,
+      awaitingUpgrade: 0,
     });
 
     const summary = await backfillCommentAnalysis({ maxCollect: 2, stages: ["collection"] });
@@ -282,6 +374,7 @@ describe("budgets", () => {
       awaitingCollection: 0,
       awaitingAnalysis: 4,
       blockedByToken: 0,
+      awaitingUpgrade: 0,
     });
 
     const summary = await backfillCommentAnalysis({ throttleMs: 0 });

@@ -7,6 +7,7 @@ import {
   countCommentBacklog,
   listContentAwaitingAnalysis,
   listContentAwaitingCollection,
+  listSummariesAwaitingUpgrade,
   toContentRef,
   type BacklogItem,
 } from "@/lib/repositories/comment-backlog";
@@ -124,8 +125,17 @@ export type BackfillSummary = {
     noComments: number;
     unchanged: number;
     failed: number;
+    /** Filled locally because the provider was unavailable. Re-claimed later. */
+    filledLocally: number;
+    /** Local analyses replaced with a model summary this run. */
+    upgraded: number;
   };
-  remaining: { awaitingCollection: number; awaitingAnalysis: number; blockedByToken: number };
+  remaining: {
+    awaitingCollection: number;
+    awaitingAnalysis: number;
+    blockedByToken: number;
+    awaitingUpgrade: number;
+  };
   durationMs: number;
   /** Sanitised, and capped. Never a raw Meta or provider payload. */
   errors: { stage: "collection" | "analysis"; message: string }[];
@@ -160,8 +170,21 @@ export async function backfillCommentAnalysis(
     finished: false,
     stoppedBecause: "complete",
     collection: { attempted: 0, collected: 0, commentsStored: 0, failed: 0 },
-    analysis: { attempted: 0, completed: 0, noComments: 0, unchanged: 0, failed: 0 },
-    remaining: { awaitingCollection: 0, awaitingAnalysis: 0, blockedByToken: 0 },
+    analysis: {
+      attempted: 0,
+      completed: 0,
+      noComments: 0,
+      unchanged: 0,
+      failed: 0,
+      filledLocally: 0,
+      upgraded: 0,
+    },
+    remaining: {
+      awaitingCollection: 0,
+      awaitingAnalysis: 0,
+      blockedByToken: 0,
+      awaitingUpgrade: 0,
+    },
     durationMs: 0,
     errors: [],
   };
@@ -245,6 +268,49 @@ export async function backfillCommentAnalysis(
 
       if (outcome !== null) stop = outcome;
       else if (stop === "complete" && queue.length >= maxAnalyses) stop = "budget";
+
+      /*
+       * ---- Stage 2b: fill what the provider could not reach ---------------
+       *
+       * Measured behaviour, not a hypothetical: this deployment's free-tier key
+       * completed five analyses and then refused for as long as it was asked.
+       * Against several hundred items and one scheduled run a night, waiting
+       * for quota means most posts show an empty panel for months.
+       *
+       * A local tally is worth strictly more than nothing there. What makes it
+       * acceptable — and what the earlier refusal to fall back was protecting
+       * against — is that it is recorded as `offline` and re-claimed by
+       * `listSummariesAwaitingUpgrade`, so the model replaces it as quota
+       * allows. The gate closes only against *repeating the same local work*,
+       * never against the real analysis arriving later.
+       *
+       * Deliberately unthrottled: no network call is involved.
+       */
+      if (outcome === "provider_unavailable" && env.AI_OFFLINE_FALLBACK) {
+        const filled = await fillLocally({ deadline, maxAnalyses, summary, note, log });
+        if (filled > 0) log.info("backfill.analysis.filled_locally", { items: filled });
+      }
+
+      /*
+       * ---- Stage 2c: repay the loan ---------------------------------------
+       *
+       * Only when the provider is healthy and nothing is waiting for a first
+       * analysis. An item with no summary at all beats one that already has a
+       * readable stand-in, every time.
+       */
+      if (outcome === null && stages.includes("analysis")) {
+        const upgraded = await upgradeLocalAnalyses({
+          deadline,
+          throttleMs,
+          maxAnalyses: maxAnalyses - summary.analysis.attempted,
+          summary,
+          note,
+          log,
+        });
+
+        if (upgraded === "provider_unavailable") stop = "provider_unavailable";
+        else if (upgraded === "time") stop = "time";
+      }
     }
   }
 
@@ -264,6 +330,11 @@ export async function backfillCommentAnalysis(
    * for ever — which is the same as having no completion signal at all. The
    * count is still reported separately, so the shortfall is visible rather than
    * quietly excused.
+   *
+   * Items awaiting an upgrade are excluded for a different reason: they are not
+   * outstanding at all. Every one of them has a readable analysis stored. What
+   * is pending is an improvement, and holding the completion signal against a
+   * provider quota would mean this never reports done on a free tier.
    */
   const reachable = summary.remaining.awaitingCollection - summary.remaining.blockedByToken;
 
@@ -374,6 +445,131 @@ async function analyseQueue(
     } catch (cause) {
       summary.analysis.failed += 1;
       note("analysis", sanitiseThrown(cause, "The analysis failed."));
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Give every remaining item a local analysis, so nothing shows an empty panel.
+ *
+ * Uses `OfflineProvider` directly rather than the fallback path, because the
+ * decision has already been taken: the provider just refused, and going back
+ * through it would spend another failing request per item to learn that again.
+ *
+ * There is no throttle and no rate limit to respect — this is in-process string
+ * counting — so the wall clock is the only bound.
+ */
+async function fillLocally(context: {
+  deadline: number;
+  maxAnalyses: number;
+  summary: BackfillSummary;
+  note: (stage: "collection" | "analysis", message: string) => void;
+  log: ReturnType<typeof childLogger>;
+}): Promise<number> {
+  const { summary, note } = context;
+
+  /*
+   * A far larger slice than the model queue, and deliberately: the point is to
+   * clear the empty panels in as few runs as possible, and each item costs a
+   * read and a write rather than a request against someone's quota.
+   */
+  const queue = await listContentAwaitingAnalysis(Math.max(context.maxAnalyses * 20, 200));
+
+  let filled = 0;
+
+  for (const item of queue) {
+    if (Date.now() >= context.deadline) break;
+
+    try {
+      const outcome = await syncContentComments({
+        actorId: null,
+        content: toContentRef(item),
+        skipFetch: true,
+        // Forced past the hash gate, because the item may carry a `failed` row
+        // from the request that just exhausted the quota.
+        forceRegenerate: true,
+        useOfflineAnalyser: true,
+      });
+
+      if (outcome.ok && outcome.result.summaryStatus !== "failed") {
+        filled += 1;
+        summary.analysis.filledLocally += 1;
+      }
+    } catch (cause) {
+      note("analysis", sanitiseThrown(cause, "The local analysis failed."));
+    }
+  }
+
+  return filled;
+}
+
+/**
+ * Replace local analyses with model summaries, newest content first.
+ *
+ * The other half of the loan. Runs only when the provider has already answered
+ * successfully this run and nothing is waiting for a *first* analysis — an
+ * empty panel is always worth more attention than a readable stand-in.
+ *
+ * `forceRegenerate` is required: the stored summary is `completed` against the
+ * current comment hash, so the gate would otherwise report it unchanged, which
+ * is exactly right for every caller except this one.
+ */
+async function upgradeLocalAnalyses(context: {
+  deadline: number;
+  throttleMs: number;
+  maxAnalyses: number;
+  summary: BackfillSummary;
+  note: (stage: "collection" | "analysis", message: string) => void;
+  log: ReturnType<typeof childLogger>;
+}): Promise<BackfillStop | null> {
+  if (context.maxAnalyses <= 0) return null;
+
+  const { summary, note, log } = context;
+  const queue = await listSummariesAwaitingUpgrade(context.maxAnalyses);
+
+  if (queue.length === 0) return null;
+
+  log.info("backfill.upgrade.claimed", { items: queue.length });
+
+  for (const [index, item] of queue.entries()) {
+    if (Date.now() >= context.deadline) return "time";
+
+    if (index > 0 && context.throttleMs > 0) {
+      const remaining = context.deadline - Date.now();
+      if (remaining <= context.throttleMs) return "time";
+      await sleep(context.throttleMs);
+    }
+
+    summary.analysis.attempted += 1;
+
+    try {
+      const outcome = await syncContentComments({
+        actorId: null,
+        content: toContentRef(item),
+        skipFetch: true,
+        forceRegenerate: true,
+        allowOfflineFallback: false,
+        // An upgrade that fails must not be worse than not attempting it.
+        preserveExistingOnFailure: true,
+      });
+
+      if (outcome.ok && outcome.result.summaryStatus === "completed") {
+        summary.analysis.upgraded += 1;
+        continue;
+      }
+
+      if (outcome.ok && outcome.result.summaryStatus === "failed") {
+        // The stand-in survives: `preserveExistingOnFailure` keeps the stored
+        // analysis intact, so a failed upgrade costs nothing a reader can see.
+        summary.analysis.failed += 1;
+        note("analysis", outcome.result.summaryError ?? "The upgrade failed.");
+        return "provider_unavailable";
+      }
+    } catch (cause) {
+      summary.analysis.failed += 1;
+      note("analysis", sanitiseThrown(cause, "The upgrade failed."));
     }
   }
 

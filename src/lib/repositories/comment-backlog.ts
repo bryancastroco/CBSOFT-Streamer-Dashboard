@@ -139,6 +139,61 @@ export async function listContentAwaitingAnalysis(limit: number): Promise<Backlo
 }
 
 /**
+ * Analyses produced locally, waiting for a real model to replace them.
+ *
+ * ## Why this queue exists
+ *
+ * Measured, not assumed: this deployment's Gemini key completed five analyses
+ * and then refused for as long as it was asked. Against several hundred items
+ * and one scheduled run a night, a provider-only drain would take months — so
+ * every post outside the newest few would show nothing at all in the meantime.
+ *
+ * The compromise is to fill the gap with the deterministic analyser, which is
+ * free and instant, and then come back. A local tally is worth strictly more
+ * than an empty panel, and marking `ai_provider = 'offline'` is what makes it a
+ * loan rather than a substitution: this query finds them again, so the real
+ * model replaces them as quota allows without anybody tracking which is which.
+ *
+ * `no_comments` rows are excluded. There is nothing there to improve on.
+ */
+export async function listSummariesAwaitingUpgrade(limit: number): Promise<BacklogItem[]> {
+  const db = getDb();
+
+  const rows = await db.execute<{
+    content_type: "post" | "video";
+    id: string;
+    streamer_id: string;
+    facebook_id: string;
+  }>(sql`
+    select 'video' as content_type, v.id, v.streamer_id, v.facebook_video_id as facebook_id,
+           v.created_time
+      from videos v
+      join comment_summaries s on s.video_id = v.id
+     where s.status = 'completed' and s.ai_provider = 'offline'
+    union all
+    select 'post' as content_type, p.id, p.streamer_id, p.facebook_post_id as facebook_id,
+           p.created_time
+      from posts p
+      join comment_summaries s on s.post_id = p.id
+     where s.status = 'completed' and s.ai_provider = 'offline'
+     order by content_type asc, created_time desc
+     limit ${limit}
+  `);
+
+  return resultRows<{
+    content_type: "post" | "video";
+    id: string;
+    streamer_id: string;
+    facebook_id: string;
+  }>(rows).map((row) => ({
+    type: row.content_type,
+    id: row.id,
+    streamerId: row.streamer_id,
+    facebookId: row.facebook_id,
+  }));
+}
+
+/**
  * How much is left, counted rather than inferred.
  *
  * The one number that answers "is this actually finished", independently of
@@ -158,6 +213,14 @@ export async function countCommentBacklog(): Promise<{
    * actionable answer.
    */
   blockedByToken: number;
+  /**
+   * Analyses currently standing in for a model summary.
+   *
+   * Not a backlog in the same sense — these items *have* something readable.
+   * Counted separately so the drain's completion signal is not held hostage to
+   * a provider quota, while the loan still stays visible.
+   */
+  awaitingUpgrade: number;
 }> {
   const db = getDb();
 
@@ -193,12 +256,19 @@ export async function countCommentBacklog(): Promise<{
     )::int as n
   `);
 
+  const upgrade = await db.execute<{ n: number }>(sql`
+    select count(*)::int as n
+      from comment_summaries
+     where status = 'completed' and ai_provider = 'offline'
+  `);
+
   const collectionRow = resultRows<{ n: number; blocked: number }>(collection)[0];
 
   return {
     awaitingCollection: collectionRow?.n ?? 0,
     blockedByToken: collectionRow?.blocked ?? 0,
     awaitingAnalysis: resultRows<{ n: number }>(analysis)[0]?.n ?? 0,
+    awaitingUpgrade: resultRows<{ n: number }>(upgrade)[0]?.n ?? 0,
   };
 }
 

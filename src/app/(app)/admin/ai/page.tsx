@@ -158,7 +158,29 @@ async function AiHealth({
               hint="Unreachable until the token is replaced."
               {...(backlog.blockedByToken > 0 ? { tone: "danger" as const } : {})}
             />
+            <MetricCard
+              label="Counted, awaiting the model"
+              value={numberFormat.format(backlog.awaitingUpgrade)}
+              hint="Readable now; a tally rather than a written summary."
+            />
           </MetricGrid>
+
+          {/*
+           * Deliberately not toned as a warning. These items have something
+           * readable — what is pending is an improvement, not a gap — and
+           * colouring them as a problem would make a healthy free-tier
+           * deployment look permanently broken.
+           */}
+          {backlog.awaitingUpgrade > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {numberFormat.format(backlog.awaitingUpgrade)} item
+              {backlog.awaitingUpgrade === 1 ? " has" : "s have"} a counted analysis rather than a
+              written one, because the provider was rate limited when they came up. They are
+              readable now and each is replaced with a model summary as quota allows — nothing has
+              to be re-requested by hand. If this number is not falling, the provider&rsquo;s daily
+              ceiling is the limit; a paid key or a larger free-tier model clears it.
+            </p>
+          ) : null}
 
           {/*
            * Named rather than folded into the total. A backlog that stops
