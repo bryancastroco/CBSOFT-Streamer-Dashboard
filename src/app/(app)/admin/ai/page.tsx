@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { requireAdmin } from "@/lib/auth/guards";
 import { describeConfiguration } from "@/lib/config/settings-view";
 import { getAiHealth } from "@/lib/repositories/admin-health";
+import { countCommentBacklog } from "@/lib/repositories/comment-backlog";
 
 export const metadata: Metadata = { title: "AI settings" };
 export const dynamic = "force-dynamic";
@@ -46,9 +47,10 @@ async function AiHealth({
   keyConfigured: boolean;
   enabled: boolean;
 }) {
-  const health = await getAiHealth();
+  const [health, backlog] = await Promise.all([getAiHealth(), countCommentBacklog()]);
 
   const failing = health.failed > 0;
+  const draining = backlog.awaitingCollection > 0 || backlog.awaitingAnalysis > 0;
 
   return (
     <div className="space-y-4">
@@ -104,6 +106,50 @@ async function AiHealth({
         when the comment set behind it has actually changed, so an unchanged item costs nothing.
       </p>
 
+      {/*
+       * The backfill's progress, which is the only place it is visible.
+       *
+       * It runs unattended on its own nightly schedule and produces no
+       * notification of any kind. Without these two numbers "is it working?"
+       * can only be answered by watching the analysed total creep up, which is
+       * indistinguishable from nothing happening at all on any single day.
+       */}
+      <Card {...(draining ? {} : { className: "border-emerald-500/40" })}>
+        <CardHeader>
+          <CardTitle className="text-base">Automatic backfill</CardTitle>
+          <CardDescription>
+            {draining ? (
+              <>
+                Content is still being worked through. This runs nightly on its own schedule and
+                needs nobody to press anything — each run takes a bounded slice and stops, so the
+                figures below fall a little every day until they reach zero.
+              </>
+            ) : (
+              <>
+                Nothing is waiting. Every piece of content has had its comments collected and
+                analysed; new content is picked up by the nightly sweep.
+              </>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MetricGrid>
+            <MetricCard
+              label="Comments not yet collected"
+              value={numberFormat.format(backlog.awaitingCollection)}
+              hint="Posts and videos whose comments edge has never been walked."
+              {...(backlog.awaitingCollection > 0 ? { tone: "warning" as const } : {})}
+            />
+            <MetricCard
+              label="Collected, not yet analysed"
+              value={numberFormat.format(backlog.awaitingAnalysis)}
+              hint="Has comments stored; no usable summary yet."
+              {...(backlog.awaitingAnalysis > 0 ? { tone: "warning" as const } : {})}
+            />
+          </MetricGrid>
+        </CardContent>
+      </Card>
+
       {failing && !keyConfigured ? (
         <Card className="border-destructive/50">
           <CardHeader>
@@ -112,9 +158,11 @@ async function AiHealth({
               No API key is configured
             </CardTitle>
             <CardDescription>
-              Every summarisation attempt will fail until <code>ANTHROPIC_API_KEY</code> is set in
-              Vercel → Settings → Environment Variables. Comments are still collected and stored in
-              the meantime, so nothing is lost — they simply go unanalysed.
+              Every summarisation attempt will fail until the key for the selected provider is set
+              in Vercel → Settings → Environment Variables — <code>ANTHROPIC_API_KEY</code> or{" "}
+              <code>GEMINI_API_KEY</code>, whichever <code>AI_PROVIDER</code> names. Comments are
+              still collected and stored in the meantime, so nothing is lost; they simply go
+              unanalysed until the backfill can reach them.
             </CardDescription>
           </CardHeader>
         </Card>

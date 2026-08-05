@@ -82,6 +82,41 @@ describe("failures that fall back", () => {
   });
 });
 
+describe("the unattended caller", () => {
+  it("refuses the tally even for a failure that would normally fall back", async () => {
+    /*
+     * The backfill opts out, and this is why.
+     *
+     * A fallback result is stored against the *current* comment hash, and the
+     * hash gate then reads that as a settled analysis — so the real model never
+     * returns to that item. For a reader waiting on a page that trade is right:
+     * a tally now beats nothing. For a nightly drain it is not, because an hour
+     * of rate limiting would leave a permanent tally on everything it touched,
+     * with nothing in the data recording the substitution.
+     */
+    mocks.analyzeComments.mockResolvedValue(failure("rate_limited", true));
+
+    const result = await analyzeWithFallback({ messages: MESSAGES }, { allowOffline: false });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.category).toBe("rate_limited");
+    // Still marked retryable, so the caller knows to come back rather than to
+    // treat this as something a human must fix.
+    expect(result.retryable).toBe(true);
+  });
+
+  it("leaves the default alone — omitting the option still falls back", async () => {
+    mocks.analyzeComments.mockResolvedValue(failure("rate_limited", true));
+
+    const result = await analyzeWithFallback({ messages: MESSAGES });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.provider).toBe("offline");
+  });
+});
+
 describe("failures that must stay loud", () => {
   it.each([
     ["authentication", "a rejected key"],

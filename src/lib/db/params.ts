@@ -101,3 +101,27 @@ export function tsResult(value: string | Date | null | undefined): Date | null {
    */
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
+
+/**
+ * The rows of a `db.execute()` result, whichever driver produced it.
+ *
+ * postgres.js hands back an array; PGlite hands back `{ rows: [...] }`. Drizzle
+ * types both as the same thing and neither shape is wrong, so code written
+ * against one throws `is not iterable` under the other — at run time, in the
+ * driver that was not used to write it.
+ *
+ * That matters because PGlite is how raw SQL gets tested here. Without this,
+ * a query can only be covered by the driver it was authored against, which
+ * leaves exactly the statements most worth testing — the hand-written ones —
+ * untestable.
+ */
+export function resultRows<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+
+  if (result && typeof result === "object") {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as T[];
+  }
+
+  return [];
+}

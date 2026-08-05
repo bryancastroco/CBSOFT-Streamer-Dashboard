@@ -70,6 +70,18 @@ export class OfflineProvider implements AiProvider {
  */
 export async function analyzeWithFallback(
   input: AnalyzeCommentsInput,
+  options: {
+    /**
+     * Whether this caller accepts a local tally in place of a model answer.
+     *
+     * True for anything a person is waiting on. False for unattended work: the
+     * fallback result is stored against the current comment hash, which closes
+     * the gate that would otherwise bring the real model back to that item. A
+     * spell of rate limiting would then leave a permanent tally behind on
+     * everything it touched, and nothing in the data would say so.
+     */
+    allowOffline?: boolean;
+  } = {},
 ): Promise<AiAnalysisResult & { fellBack?: boolean }> {
   const env = getServerEnv();
   const log = childLogger({ component: "ai.resolve" });
@@ -96,7 +108,9 @@ export async function analyzeWithFallback(
 
   if (primary.ok) return primary;
 
-  if (!env.AI_OFFLINE_FALLBACK || !primary.retryable) return primary;
+  const offlineAllowed = options.allowOffline ?? true;
+
+  if (!offlineAllowed || !env.AI_OFFLINE_FALLBACK || !primary.retryable) return primary;
 
   log.warn("ai.fell_back_offline", { category: primary.category, provider: primary.provider });
 

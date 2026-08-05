@@ -41,6 +41,15 @@ export const AUDIT_ACTIONS = {
   automationSyncStarted: "automation.sync_started",
   automationSyncCompleted: "automation.sync_completed",
 
+  /**
+   * The unattended comment backfill, kept distinct from a sweep.
+   *
+   * The two run on separate schedules and fail for separate reasons, and the
+   * trail's usefulness depends on being able to ask "was the drain running last
+   * week?" without a sweep's entries drowning the answer.
+   */
+  commentBackfillStarted: "automation.comment_backfill_started",
+
   // Phase 3 — Page tokens. Separate from streamer.* so a credential change is
   // never buried inside a routine field edit in the trail.
   tokenAdded: "token.added",
@@ -84,6 +93,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.videosSynced]: "Videos synchronised",
   [AUDIT_ACTIONS.automationSyncStarted]: "Automation sweep started",
   [AUDIT_ACTIONS.automationSyncCompleted]: "Automation sweep completed",
+  [AUDIT_ACTIONS.commentBackfillStarted]: "Comment backfill started",
 
   [AUDIT_ACTIONS.tokenAdded]: "Token added",
   [AUDIT_ACTIONS.tokenReplaced]: "Token replaced",

@@ -18,6 +18,7 @@ import { childLogger } from "@/lib/observability/logger";
 import {
   getSummaryForContent,
   listCommentsForContent,
+  markCommentsSynced,
   markSummaryProcessing,
   saveSummaryFailure,
   saveSummarySuccess,
@@ -56,9 +57,17 @@ export type SyncCommentsResult = {
   truncated: boolean;
   summaryRegenerated: boolean;
   regenerateReason: RegenerateReason;
-  summaryStatus: "completed" | "no_comments" | "failed" | "unchanged" | "skipped";
+  summaryStatus: "completed" | "no_comments" | "failed" | "unchanged" | "skipped" | "deferred";
   summaryError?: string;
   fetchError?: NormalizedMetaError;
+  /**
+   * The provider's own classification of a failure, when there was one.
+   *
+   * The backfill branches on this: a rate limit means "come back later", a
+   * rejected key means "stop, and do not attempt this fifteen hundred more
+   * times". A caller that only sees the message cannot tell those apart.
+   */
+  summaryRetryable?: boolean;
 };
 
 /** The parent row's Meta id and owning streamer, whichever table it lives in. */
@@ -81,6 +90,31 @@ export async function syncContentComments(params: {
   forceRegenerate?: boolean;
   /** Skip the Meta fetch and summarise what is already stored. */
   skipFetch?: boolean;
+  /**
+   * Collect and record, but do not call the model.
+   *
+   * The backfill's collection stage uses this. The two halves of this function
+   * are bounded by different scarce resources — Graph quota for the walk, a
+   * provider's requests-per-minute for the analysis — and a drain that has to
+   * pace itself against the slower of the two would crawl through the roster at
+   * the speed of the model. Splitting them lets collection run at Graph speed
+   * and analysis follow at its own.
+   *
+   * Distinct from `AI_SUMMARIZATION_ENABLED`, which is an operator's decision
+   * about spend. This is a scheduling decision by one caller, so it writes no
+   * summary row at all — not even a `pending` one, which would misreport an
+   * analysis as having been attempted.
+   */
+  deferAnalysis?: boolean;
+  /**
+   * Fall back to the local analyser when the provider cannot answer.
+   *
+   * True for anything with a reader waiting. False for the unattended backfill:
+   * a tally stored under the current comment hash closes the gate that would
+   * otherwise bring the real model back to this item, so an hour of rate
+   * limiting would permanently downgrade everything it touched.
+   */
+  allowOfflineFallback?: boolean;
 }): Promise<SyncCommentsOutcome> {
   const env = getServerEnv();
 
@@ -132,7 +166,26 @@ export async function syncContentComments(params: {
         commentsStored = written;
       }
 
-      log.info("comments.stored", { commentsFetched, commentsStored, truncated });
+      /*
+       * The marker, written only on a walk that actually completed.
+       *
+       * `fetchComments` reports a rate limit or an expired token as
+       * `fetched.error` rather than throwing, so "we got an answer" and "the
+       * answer was an error" arrive the same way. Stamping regardless would
+       * record a rate-limited item as collected, and the backfill would never
+       * return to it — that post's comments would be lost silently and
+       * permanently, which is the one outcome a resumable drain must not have.
+       */
+      if (!fetchError) {
+        await markCommentsSynced(params.content);
+      }
+
+      log.info("comments.stored", {
+        commentsFetched,
+        commentsStored,
+        truncated,
+        marked: !fetchError,
+      });
     });
 
     if (!lent.ok) {
@@ -142,6 +195,29 @@ export async function syncContentComments(params: {
         message: "That streamer has no Page token, so comments cannot be collected.",
       };
     }
+  }
+
+  /*
+   * ---- 3b. Stop here if the caller only wanted collection ----------------
+   *
+   * Before the hash read, not after: the whole point is to spend nothing more
+   * on this item, and reading its comments back to hash them is exactly what
+   * the analysis stage will do anyway when it gets here.
+   */
+  if (params.deferAnalysis) {
+    return {
+      ok: true,
+      result: {
+        content: params.content,
+        commentsFetched,
+        commentsStored,
+        truncated,
+        summaryRegenerated: false,
+        regenerateReason: "deferred",
+        summaryStatus: "deferred",
+        ...(fetchError ? { fetchError } : {}),
+      },
+    };
   }
 
   // ---- 4. Hash the stored set -------------------------------------------
@@ -251,7 +327,10 @@ export async function syncContentComments(params: {
    * reason unrelated to the comments — an empty balance, a free-tier ceiling,
    * an outage. A rejected key or a malformed request still fails loudly.
    */
-  const analysis = await analyzeWithFallback({ messages });
+  const analysis = await analyzeWithFallback(
+    { messages },
+    { allowOffline: params.allowOfflineFallback ?? true },
+  );
 
   const entityType =
     params.content.type === "post" ? AUDIT_ENTITY_TYPES.post : AUDIT_ENTITY_TYPES.video;
@@ -291,6 +370,7 @@ export async function syncContentComments(params: {
         regenerateReason: decision.reason,
         summaryStatus: "failed",
         summaryError: analysis.message,
+        summaryRetryable: analysis.retryable,
         ...(fetchError ? { fetchError } : {}),
       },
     };

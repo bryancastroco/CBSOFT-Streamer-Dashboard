@@ -113,7 +113,9 @@ export type RegenerateReason =
   | "previous_attempt_incomplete"
   | "unchanged"
   /** AI_SUMMARIZATION_ENABLED is false. Not a decision about the comments. */
-  | "disabled";
+  | "disabled"
+  /** The caller asked for collection only. The analysis stage will follow. */
+  | "deferred";
 
 export const REGENERATE_REASON_LABELS: Record<RegenerateReason, string> = {
   forced: "Regeneration requested by an admin",
@@ -122,4 +124,5 @@ export const REGENERATE_REASON_LABELS: Record<RegenerateReason, string> = {
   previous_attempt_incomplete: "The previous attempt did not complete",
   unchanged: "Comments are unchanged — the stored summary still applies",
   disabled: "AI summarisation is switched off (AI_SUMMARIZATION_ENABLED=false)",
+  deferred: "Comments were collected; the analysis stage will pick this up",
 };

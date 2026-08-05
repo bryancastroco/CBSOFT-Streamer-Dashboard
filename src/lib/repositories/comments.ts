@@ -6,7 +6,7 @@ import type { CommentAnalysis } from "@/lib/ai/contract";
 import type { ContentRef } from "@/lib/comments/content-ref";
 import { commentContentHash } from "@/lib/comments/hashing";
 import { getDb } from "@/lib/db";
-import { commentSummaries, comments } from "@/lib/db/schema";
+import { commentSummaries, comments, posts, videos } from "@/lib/db/schema";
 import type { NormalizedComment } from "@/lib/meta/comments";
 
 /**
@@ -108,6 +108,28 @@ export async function upsertContentComments(params: {
     .returning({ id: comments.id });
 
   return { written: written.length };
+}
+
+/**
+ * Record that the comments edge has been walked for this item.
+ *
+ * Written after a *successful* fetch and only then. A failed walk must leave
+ * the marker null, or the backfill would count a rate-limited item as done and
+ * never come back to it — silently losing that post's comments for good.
+ *
+ * Note this is stamped even when the walk found nothing: "we looked, there were
+ * none" is exactly the fact the backfill needs recorded, and it is the one that
+ * the presence of comment rows cannot express.
+ */
+export async function markCommentsSynced(content: ContentRef, at = new Date()): Promise<void> {
+  const db = getDb();
+
+  if (content.type === "post") {
+    await db.update(posts).set({ commentsSyncedAt: at }).where(eq(posts.id, content.id));
+    return;
+  }
+
+  await db.update(videos).set({ commentsSyncedAt: at }).where(eq(videos.id, content.id));
 }
 
 /** All stored comments for a content item, oldest first. */

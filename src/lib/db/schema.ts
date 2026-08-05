@@ -513,6 +513,19 @@ export const posts = pgTable(
     /** The unmodified Graph response for this post, for later re-derivation. */
     rawJson: jsonb("raw_json").notNull(),
 
+    /**
+     * When the comments edge was last walked. Null means never.
+     *
+     * The marker the unattended backfill claims work from. Without it a post
+     * with no comment rows is ambiguous — never collected, or collected and
+     * genuinely silent — and a drain that cannot tell those apart re-walks the
+     * silent posts forever instead of reaching the rest of the roster.
+     *
+     * Distinct from `lastSyncedAt`, which is about the post object. See
+     * migration 0014.
+     */
+    commentsSyncedAt: timestamp("comments_synced_at", { withTimezone: true }),
+
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -635,6 +648,9 @@ export const videos = pgTable(
 
     /** The unmodified Graph response, for later re-derivation. */
     rawJson: jsonb("raw_json").notNull(),
+
+    /** When the comments edge was last walked. Null means never. See `posts`. */
+    commentsSyncedAt: timestamp("comments_synced_at", { withTimezone: true }),
 
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

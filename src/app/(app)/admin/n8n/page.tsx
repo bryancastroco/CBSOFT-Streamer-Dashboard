@@ -95,6 +95,14 @@ const ENDPOINTS: readonly {
     kind: "write",
   },
   {
+    method: "POST",
+    path: "/api/automation/comments/backfill",
+    purpose:
+      "Advance content towards a stored comment analysis. Repeat until finished is true. " +
+      "Runs nightly on its own schedule; this is for driving it faster.",
+    kind: "write",
+  },
+  {
     method: "GET",
     path: "/api/automation/exports/streamers",
     purpose: "Roster rows for the Streamers tab.",
