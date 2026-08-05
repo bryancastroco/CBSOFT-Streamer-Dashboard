@@ -29,7 +29,42 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+const aiMocks = vi.hoisted(() => ({
+  analyze: vi.fn(),
+  provider: { value: "gemini" as string },
+  enabled: { value: true },
+}));
+
+vi.mock("@/config/env", () => ({
+  getServerEnv: () => ({
+    AI_PROVIDER: aiMocks.provider.value,
+    AI_SUMMARIZATION_ENABLED: aiMocks.enabled.value,
+  }),
+}));
+
+vi.mock("@/lib/ai/resolve", () => ({ analyzeWithFallback: aiMocks.analyze }));
+
 const { getCommentOverview } = await import("@/lib/repositories/comment-overview");
+
+/** A model answer, distinguishable from the counter's output. */
+function written(summary = "Players are asking about migration.") {
+  return {
+    ok: true as const,
+    analysis: {
+      summary,
+      sentiment: "mixed" as const,
+      positive_points: ["Community enthusiasm"],
+      concerns: ["Migration delays"],
+      suggestions: [],
+      questions: ["When does migration finish?"],
+      urgent_issues: [],
+    },
+    model: "gemini-flash-latest",
+    provider: "gemini" as const,
+    usage: { inputTokens: 10, outputTokens: 5 },
+    raw: {},
+  };
+}
 
 let client: PGlite;
 let alpha: string;
@@ -135,6 +170,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await client.query("delete from streamers");
+  await client.query("delete from comment_overview_summaries");
+
+  aiMocks.analyze.mockReset();
+  aiMocks.analyze.mockResolvedValue(written());
+  aiMocks.provider.value = "gemini";
+  aiMocks.enabled.value = true;
 
   alpha = await seedStreamer("ALPHA", FAKE_PAGE_ID);
   beta = await seedStreamer("BETA", "987654321098765");
@@ -275,5 +316,126 @@ describe("what it reports", () => {
 
     expect(overview.contentSampled).toBe(2);
     expect(overview.analysed).toBe(4);
+  });
+});
+
+describe("the written reading, and paying for it once", () => {
+  it("uses the configured provider rather than the counter", async () => {
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    const overview = await getCommentOverview(filters());
+
+    expect(aiMocks.analyze).toHaveBeenCalledTimes(1);
+    expect(overview.provider).toBe("gemini");
+    expect(overview.analysis.summary).toContain("migration");
+  });
+
+  it("does not call the model again for the same content", async () => {
+    /*
+     * The whole reason the cache exists. A dashboard re-renders on every filter
+     * change, navigation and refresh; billing for the same answer each time is
+     * the mistake the per-post hash gate already prevents, at roster scale.
+     */
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    const first = await getCommentOverview(filters());
+    const second = await getCommentOverview(filters());
+
+    expect(aiMocks.analyze).toHaveBeenCalledTimes(1);
+    expect(second.cached).toBe(true);
+    expect(first.cached).toBe(false);
+    // Same answer, not a differently worded one.
+    expect(second.analysis.summary).toBe(first.analysis.summary);
+  });
+
+  it("hits the same cache row for two filter selections covering the same content", async () => {
+    /*
+     * The key is the content, not the filter values — "last 30 days" resolves
+     * to a different instant every render, so a key built from those would
+     * never hit and the cache would be decorative.
+     */
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    await getCommentOverview(filters());
+    const byStreamer = await getCommentOverview(filters({ streamerId: alpha }));
+
+    expect(aiMocks.analyze).toHaveBeenCalledTimes(1);
+    expect(byStreamer.cached).toBe(true);
+  });
+
+  it("computes again once a new comment arrives", async () => {
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+    await getCommentOverview(filters());
+
+    await client.query(
+      `insert into comments (content_type, post_id, facebook_comment_id, message,
+                             created_time, content_hash)
+       select 'post', id, 'new_one', 'bagong tanong?', now(), 'h_new'
+         from posts where facebook_post_id = 'p1'`,
+    );
+
+    const after = await getCommentOverview(filters());
+
+    // The conversation changed, so the reading should too.
+    expect(aiMocks.analyze).toHaveBeenCalledTimes(2);
+    expect(after.cached).toBe(false);
+  });
+
+  it("sends the model a bounded sample, not every comment", async () => {
+    /*
+     * Comments become prompt tokens. Five thousand of them would turn a
+     * dashboard render into a real expense, and a tone-and-themes reading does
+     * not improve materially past a few hundred.
+     */
+    await seedPost({
+      streamerId: alpha,
+      handle: "busy",
+      daysOld: 1,
+      comments: Array.from({ length: 600 }, (_, index) => `comment number ${index}`),
+    });
+
+    await getCommentOverview(filters());
+
+    const sent = aiMocks.analyze.mock.calls[0]?.[0] as { messages: string[] };
+    expect(sent.messages.length).toBe(400);
+  });
+
+  it("falls back to the counter when the provider refuses", async () => {
+    // A dashboard panel must render. A depleted balance is not a reason to
+    // show nothing.
+    aiMocks.analyze.mockResolvedValue({
+      ok: false,
+      category: "rate_limited",
+      message: "Prepayment credits are depleted.",
+      retryable: true,
+      provider: "gemini",
+      model: "gemini-flash-latest",
+    });
+
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    const overview = await getCommentOverview(filters());
+
+    expect(overview.provider).toBe("offline");
+    expect(overview.analysis.summary).toContain("without a language model");
+  });
+
+  it("never calls a provider when summarisation is switched off", async () => {
+    aiMocks.enabled.value = false;
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    const overview = await getCommentOverview(filters());
+
+    expect(aiMocks.analyze).not.toHaveBeenCalled();
+    expect(overview.provider).toBe("offline");
+  });
+
+  it("never calls a provider when the configured one is the counter", async () => {
+    aiMocks.provider.value = "offline";
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    await getCommentOverview(filters());
+
+    expect(aiMocks.analyze).not.toHaveBeenCalled();
   });
 });

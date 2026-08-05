@@ -34,6 +34,9 @@ describe("migrations apply cleanly", () => {
 
     expect(found.map((r) => r.table_name)).toEqual([
       "audit_logs",
+      // Cached roster-level readings, keyed by the content they cover, so a
+      // dashboard re-render does not bill for the same answer twice.
+      "comment_overview_summaries",
       "comment_summaries",
       "comments",
       "content_metric_snapshots",

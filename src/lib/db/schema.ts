@@ -962,3 +962,51 @@ export type NewContentMetricsCurrentRow = typeof contentMetricsCurrent.$inferIns
 
 export type ContentMetricSnapshotRow = typeof contentMetricSnapshots.$inferSelect;
 export type NewContentMetricSnapshotRow = typeof contentMetricSnapshots.$inferInsert;
+
+/**
+ * Cached roster-level comment readings, keyed by the content they cover.
+ *
+ * The dashboard's overview panel wants a written summary across whatever the
+ * filters select, which means a model call — and a dashboard re-renders on
+ * every filter change, navigation and refresh. Calling the model each time
+ * would bill repeatedly for the same answer, which is the mistake the per-post
+ * hash gate exists to prevent, repeated at roster scale.
+ *
+ * The key is a hash of the sampled content rather than of the filter values:
+ * "last 30 days" resolves to a different instant every render, so a key built
+ * from the filters would never hit. Two selections resolving to the same posts
+ * deserve the same answer, and new comments change the hash — which is exactly
+ * when a fresh reading is warranted. See migration 0015.
+ */
+export const commentOverviewSummaries = pgTable(
+  "comment_overview_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    /** sha256 over the sampled content ids and their comment counts. */
+    sourceHash: text("source_hash").notNull(),
+
+    summary: text("summary").notNull(),
+    sentiment: commentSentimentEnum("sentiment"),
+
+    positivePointsJson: jsonb("positive_points_json"),
+    concernsJson: jsonb("concerns_json"),
+    suggestionsJson: jsonb("suggestions_json"),
+    questionsJson: jsonb("questions_json"),
+    urgentIssuesJson: jsonb("urgent_issues_json"),
+
+    /** Named on screen, so a counted tally is never read as an interpretation. */
+    aiProvider: text("ai_provider").notNull(),
+    model: text("model").notNull(),
+
+    contentSampled: integer("content_sampled").notNull().default(0),
+    commentCount: integer("comment_count").notNull().default(0),
+
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("comment_overview_source_hash_key").on(table.sourceHash),
+    index("comment_overview_generated_at_idx").on(table.generatedAt.desc()),
+  ],
+);

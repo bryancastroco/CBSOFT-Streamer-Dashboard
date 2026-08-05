@@ -1,11 +1,15 @@
 import "server-only";
 
-import { and, desc, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { createHash } from "node:crypto";
 
+import { and, desc, eq, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+
+import { getServerEnv } from "@/config/env";
 import { analyseOffline } from "@/lib/ai/offline";
+import { analyzeWithFallback } from "@/lib/ai/resolve";
 import type { CommentAnalysis } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
-import { commentSummaries, comments } from "@/lib/db/schema";
+import { commentOverviewSummaries, commentSummaries, comments } from "@/lib/db/schema";
 import { resultRows, tsParam } from "@/lib/db/params";
 import type { DashboardFilters } from "@/lib/repositories/dashboard";
 
@@ -63,6 +67,20 @@ export const OVERVIEW_CONTENT_CAP = 300;
 /** A second ceiling, for the case where a few items carry enormous threads. */
 export const OVERVIEW_COMMENT_CAP = 5_000;
 
+/**
+ * Comments sent to the model when one is configured.
+ *
+ * Far below the comment cap, because these become prompt tokens. Measured on
+ * this project's own data an average comment is about 25 tokens, so 400 is
+ * roughly 10k in — a fraction of a cent — where 5,000 would be 125k and turn
+ * a dashboard render into a real expense.
+ *
+ * A tone-and-themes reading does not improve materially past a few hundred
+ * comments; what it needs is a representative recent sample, which is what
+ * this is.
+ */
+export const OVERVIEW_MODEL_COMMENT_CAP = 400;
+
 export type CommentOverview = {
   /** Comments actually fed into the analysis. */
   analysed: number;
@@ -75,6 +93,10 @@ export type CommentOverview = {
   /** Per-item sentiment for the sampled content, from stored summaries. */
   sentiment: { positive: number; neutral: number; negative: number; mixed: number };
   analysis: CommentAnalysis;
+  /** Which produced the reading: a model, or the in-process counter. */
+  provider: string;
+  /** True when this came from cache rather than a fresh model call. */
+  cached: boolean;
 };
 
 /** Period and streamer predicates, for a content table aliased `t`. */
@@ -118,6 +140,8 @@ export async function getCommentOverview(
     truncated: false,
     sentiment: { positive: 0, neutral: 0, negative: 0, mixed: 0 },
     analysis: analyseOffline([]),
+    provider: "offline",
+    cached: false,
   };
 
   /*
@@ -201,12 +225,144 @@ export async function getCommentOverview(
     }
   }
 
-  return {
+  const shape = {
     analysed: messages.length,
     contentSampled: rows.length,
     contentInScope,
     truncated: rows.length < contentInScope || messages.length >= commentCap,
     sentiment,
-    analysis: analyseOffline(messages),
   };
+
+  /*
+   * ---- The written reading, computed once per distinct content set --------
+   *
+   * A dashboard re-renders on every filter change, navigation and refresh.
+   * Calling the model each time would bill repeatedly for the same answer —
+   * the mistake the per-post hash gate exists to prevent, at roster scale.
+   *
+   * The hash covers the sampled content and how many comments each carries, so
+   * it is stable across renders and changes exactly when the conversation does.
+   */
+  const sourceHash = overviewSourceHash(rows, messages.length);
+  const cached = await readCachedOverview(sourceHash);
+
+  if (cached) return { ...shape, analysis: cached.analysis, provider: cached.provider, cached: true };
+
+  const fresh = await writeOverviewAnalysis({
+    sourceHash,
+    messages,
+    contentSampled: rows.length,
+  });
+
+  return { ...shape, analysis: fresh.analysis, provider: fresh.provider, cached: false };
+}
+
+/**
+ * A stable identity for "this set of content, in this state".
+ *
+ * Deliberately not derived from the filter values: `last 30 days` resolves to a
+ * different instant every render, so a key built from those would never hit and
+ * the cache would be decorative. Two selections that resolve to the same posts
+ * deserve the same answer.
+ *
+ * The comment count is included so that new comments invalidate it, which is
+ * exactly when a fresh reading is warranted.
+ */
+function overviewSourceHash(
+  rows: readonly { id: string; kind: string }[],
+  commentCount: number,
+): string {
+  const ids = rows
+    .map((row) => `${row.kind}:${row.id}`)
+    .sort()
+    .join(",");
+
+  return createHash("sha256").update(`${ids}|${commentCount}`, "utf8").digest("hex");
+}
+
+async function readCachedOverview(
+  sourceHash: string,
+): Promise<{ analysis: CommentAnalysis; provider: string } | null> {
+  const db = getDb();
+
+  const [row] = await db
+    .select()
+    .from(commentOverviewSummaries)
+    .where(eq(commentOverviewSummaries.sourceHash, sourceHash))
+    .limit(1);
+
+  if (!row) return null;
+
+  return {
+    provider: row.aiProvider,
+    analysis: {
+      summary: row.summary,
+      sentiment: (row.sentiment ?? "neutral") as CommentAnalysis["sentiment"],
+      positive_points: (row.positivePointsJson ?? []) as string[],
+      concerns: (row.concernsJson ?? []) as string[],
+      suggestions: (row.suggestionsJson ?? []) as string[],
+      questions: (row.questionsJson ?? []) as string[],
+      urgent_issues: (row.urgentIssuesJson ?? []) as string[],
+    },
+  };
+}
+
+/**
+ * Produce the reading and store it.
+ *
+ * Falls back to the counter on any provider failure, and stores that too — a
+ * dashboard panel must render, and a depleted balance or a rate limit is not a
+ * reason to show nothing. The stored row records which produced it, so the
+ * panel can say so and a later run can tell a tally from an interpretation.
+ */
+async function writeOverviewAnalysis(params: {
+  sourceHash: string;
+  messages: readonly string[];
+  contentSampled: number;
+}): Promise<{ analysis: CommentAnalysis; provider: string }> {
+  const env = getServerEnv();
+  const db = getDb();
+
+  const sample = params.messages.slice(0, OVERVIEW_MODEL_COMMENT_CAP);
+
+  let analysis = analyseOffline(params.messages);
+  let provider = "offline";
+  let model = "lexicon";
+
+  if (env.AI_SUMMARIZATION_ENABLED && env.AI_PROVIDER !== "offline" && sample.length > 0) {
+    // `allowOffline` is left at its default: a reader is waiting on this panel,
+    // and a tally now beats an empty card.
+    const result = await analyzeWithFallback({ messages: [...sample] });
+
+    if (result.ok) {
+      analysis = result.analysis;
+      provider = result.provider;
+      model = result.model;
+    }
+  }
+
+  await db
+    .insert(commentOverviewSummaries)
+    .values({
+      sourceHash: params.sourceHash,
+      summary: analysis.summary,
+      sentiment: analysis.sentiment === "no_comments" ? null : analysis.sentiment,
+      positivePointsJson: analysis.positive_points,
+      concernsJson: analysis.concerns,
+      suggestionsJson: analysis.suggestions,
+      questionsJson: analysis.questions,
+      urgentIssuesJson: analysis.urgent_issues,
+      aiProvider: provider,
+      model,
+      contentSampled: params.contentSampled,
+      commentCount: params.messages.length,
+    })
+    /*
+     * Two concurrent renders of the same selection race here, and both produce
+     * a valid answer. Ignoring the loser is correct — the winner is already
+     * stored and equally current.
+     */
+    .onConflictDoNothing({ target: commentOverviewSummaries.sourceHash });
+
+  return { analysis, provider };
 }

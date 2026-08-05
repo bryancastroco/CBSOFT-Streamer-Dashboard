@@ -2,9 +2,14 @@ import { MessageSquareText, TriangleAlert } from "lucide-react";
 
 import { EmptyState } from "@/components/layout/states";
 import { Badge } from "@/components/ui/badge";
+import { SentimentBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import type { CommentOverview } from "@/lib/repositories/comment-overview";
+import { describeStatus } from "@/lib/ui/status";
+
+/** Rendered in a fixed order so the row reads the same on every screen. */
+const SENTIMENT_ORDER = ["positive", "mixed", "neutral", "negative"] as const;
 
 /**
  * What everyone is saying, across the current filter selection.
@@ -42,13 +47,6 @@ function FindingList({ title, items }: { title: string; items: readonly string[]
     </div>
   );
 }
-
-const SENTIMENT_TONE: Record<string, string> = {
-  positive: "text-emerald-600 dark:text-emerald-500",
-  negative: "text-destructive",
-  mixed: "text-amber-600 dark:text-amber-500",
-  neutral: "text-muted-foreground",
-};
 
 export function CommentOverviewPanel({ overview }: { overview: CommentOverview }) {
   if (overview.analysed === 0) {
@@ -99,9 +97,18 @@ export function CommentOverviewPanel({ overview }: { overview: CommentOverview }
             </CardDescription>
           </div>
 
-          <Badge variant="outline" className={SENTIMENT_TONE[analysis.sentiment] ?? ""}>
-            {analysis.sentiment}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {/*
+             * The system's own badge, not a hand-rolled one. It carries three
+             * signals — wording, glyph and tone — where the ad-hoc version this
+             * replaces carried colour alone, and it read as a different product
+             * from every other status on the page.
+             */}
+            <SentimentBadge status={analysis.sentiment} />
+            <Badge variant="outline" className="font-normal">
+              {overview.provider === "offline" ? "counted" : overview.provider}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
 
@@ -109,37 +116,32 @@ export function CommentOverviewPanel({ overview }: { overview: CommentOverview }
         <p className="text-sm leading-relaxed">{analysis.summary}</p>
 
         {sentimentTotal > 0 ? (
-          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-            <span>
-              <span className="font-medium text-emerald-600 dark:text-emerald-500">
-                {numberFormat.format(sentiment.positive)}
-              </span>{" "}
-              positive
-            </span>
-            <span>
-              <span className="font-medium text-amber-600 dark:text-amber-500">
-                {numberFormat.format(sentiment.mixed)}
-              </span>{" "}
-              mixed
-            </span>
-            <span>
-              <span className="font-medium">{numberFormat.format(sentiment.neutral)}</span> neutral
-            </span>
-            <span>
-              <span className="font-medium text-destructive">
-                {numberFormat.format(sentiment.negative)}
-              </span>{" "}
-              negative
-            </span>
-            <span className="text-muted-foreground/70">
-              — per post, from stored analyses
-            </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {SENTIMENT_ORDER.map((key) => (
+              <span key={key} className="inline-flex items-center gap-1.5 text-xs">
+                {/* The same variables the sentiment pie fills its slices with,
+                    so the two readings of the same data cannot disagree. */}
+                <span
+                  aria-hidden
+                  className="size-2.5 rounded-full"
+                  style={{ background: `var(--sentiment-${key})` }}
+                />
+                <span className="font-medium">{numberFormat.format(sentiment[key])}</span>
+                <span className="text-muted-foreground">
+                  {describeStatus("sentiment", key).label}
+                </span>
+              </span>
+            ))}
+            <span className="text-xs text-muted-foreground">per post, from stored analyses</span>
           </div>
         ) : null}
 
+        {/* `danger-subtle` and `danger-foreground` are the tokens the status
+            badges use. The Tailwind palette classes this replaces were a
+            second, slightly different red on the same screen. */}
         {urgent.length > 0 ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
-            <h4 className="flex items-center gap-2 text-xs font-medium text-destructive">
+          <div className="rounded-md border border-danger/25 bg-danger-subtle p-3">
+            <h4 className="flex items-center gap-2 text-xs font-medium text-danger-foreground">
               <TriangleAlert className="size-3.5" aria-hidden />
               Flagged as urgent
             </h4>

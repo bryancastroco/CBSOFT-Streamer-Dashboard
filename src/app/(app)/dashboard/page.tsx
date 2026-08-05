@@ -403,7 +403,7 @@ export default async function DashboardPage({
       <section className="space-y-3">
         <SectionHeader
           title="What people are saying"
-          description="Every comment in the current selection, pooled into one reading. Counted in-process — this costs nothing and is always current, whichever AI provider is configured."
+          description="Every comment in the current selection, pooled into one reading. Written by the configured AI provider and cached against the content it covers, so changing a filter and coming back costs nothing. Falls back to an in-process count when no provider is available."
         />
         <Suspense key={`co-${key}`} fallback={<CardSkeleton count={1} />}>
           <Conversation params={params} />

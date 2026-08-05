@@ -106,6 +106,13 @@
       "when": 1786060800000,
       "tag": "0014_phase23_comment_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786074000000,
+      "tag": "0015_phase24_overview_summaries",
+      "breakpoints": true
     }
   ]
 }
