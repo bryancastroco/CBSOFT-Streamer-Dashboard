@@ -9,6 +9,7 @@ import { getServerEnv } from "@/config/env";
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
 import {
   createStreamer,
+  purgeStreamer,
   replaceStreamerToken,
   requestManualSync,
   softDeleteStreamer,
@@ -21,6 +22,7 @@ import { syncStreamerPosts } from "@/lib/services/sync-posts";
 import { syncStreamerVideos } from "@/lib/services/sync-videos";
 import {
   createStreamerSchema,
+  purgeConfirmationFor,
   replaceTokenSchema,
   streamerIdSchema,
   updateStreamerSchema,
@@ -210,6 +212,46 @@ export async function deleteStreamerAction(
 
   revalidatePath("/admin/streamers");
   redirect("/admin/streamers?deleted=1");
+}
+
+// ---------------------------------------------------------------------------
+// Permanent deletion
+// ---------------------------------------------------------------------------
+
+export async function purgeStreamerAction(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const actor = await requireActor();
+  if (isActionState(actor)) return actor;
+
+  const id = streamerIdSchema.safeParse(formData.get("id"));
+  if (!id.success) return { status: "error", message: "That streamer id is not valid." };
+
+  const streamerCode = String(formData.get("streamerCode") ?? "").trim();
+  const expected = purgeConfirmationFor(streamerCode);
+  const confirmation = String(formData.get("confirm") ?? "").trim();
+
+  /*
+   * Case-sensitive, and compared to a phrase built here rather than to one
+   * submitted alongside it. A hidden field carrying the expected value would
+   * make the gate a formality for anyone posting to this action directly —
+   * which is every visitor, since a Server Action is an ordinary POST endpoint.
+   */
+  if (confirmation !== expected) {
+    return { status: "error", message: `Type ${expected} exactly to confirm.` };
+  }
+
+  const outcome = await purgeStreamer({ actorId: actor.id, id: id.data });
+  if (!outcome.ok) return { status: "error", message: outcome.message };
+
+  revalidatePath("/admin/streamers");
+  revalidatePath("/dashboard");
+  revalidatePath("/posts");
+  revalidatePath("/videos");
+  revalidatePath("/comment-analysis");
+
+  redirect(`/admin/streamers?purged=${encodeURIComponent(outcome.data.streamerCode)}`);
 }
 
 // ---------------------------------------------------------------------------

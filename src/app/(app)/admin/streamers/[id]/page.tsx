@@ -7,6 +7,7 @@ import {
   ActiveTogglePanel,
   DeletePanel,
   EditStreamerPanel,
+  PurgePanel,
   SyncPanel,
   TokenPanel,
 } from "@/app/(app)/admin/streamers/[id]/panels";
@@ -22,7 +23,11 @@ import { Separator } from "@/components/ui/separator";
 import { requireAdmin } from "@/lib/auth/guards";
 import { EXPECTED_SCOPES } from "@/lib/meta/token-status";
 import { countPostsForStreamer } from "@/lib/repositories/posts";
-import { getStreamerById, listSyncRunsForStreamer } from "@/lib/repositories/streamers";
+import {
+  countStreamerFootprint,
+  getStreamerById,
+  listSyncRunsForStreamer,
+} from "@/lib/repositories/streamers";
 import { countVideosForStreamer } from "@/lib/repositories/videos";
 import { streamerIdSchema } from "@/lib/validation/streamers";
 
@@ -65,10 +70,14 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
   const streamer = await getStreamerById(parsed.data);
   if (!streamer) notFound();
 
-  const [syncRuns, postCount, videoCount] = await Promise.all([
+  const [syncRuns, postCount, videoCount, footprint] = await Promise.all([
     listSyncRunsForStreamer(streamer.id, 5),
     countPostsForStreamer(streamer.id),
     countVideosForStreamer(streamer.id),
+    // Read on every visit rather than behind a disclosure: the confirmation
+    // field is meaningless without knowing what is being confirmed, and eight
+    // aggregate counts are cheap next to the rest of this page.
+    countStreamerFootprint(streamer.id),
   ]);
   const grantedScopes = new Set(streamer.tokenScopes);
 
@@ -262,23 +271,75 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
         </CardContent>
       </Card>
 
-      {/* ---------------------------------------------------------------- */}
-      {!streamer.deletedAt ? (
-        <Card className="border-destructive/40">
-          <CardHeader>
-            <CardTitle className="text-base">Danger zone</CardTitle>
-            <CardDescription>
-              Disabling stops synchronisation but keeps everything. Deleting also destroys the
-              stored Page token.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <ActiveTogglePanel streamerId={streamer.id} active={streamer.active} />
-            <Separator />
-            <DeletePanel streamerId={streamer.id} streamerCode={streamer.streamerCode} />
-          </CardContent>
-        </Card>
-      ) : null}
+      {/* ----------------------------------------------------------------
+       * Three ways to stop using a streamer, in ascending order of loss.
+       *
+       * They were previously one section labelled "Danger zone" containing a
+       * toggle and something called "Delete streamer" that did not delete
+       * anything — the record and all of its content stayed. Naming each
+       * option after what it actually costs is the whole point of this
+       * layout: the reversible ones read as reversible, and the one that is
+       * not is separated, differently worded, and asks for a different phrase.
+       */}
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-base">Removing this streamer</CardTitle>
+          <CardDescription>
+            Three options, in order of what they cost. Only the last one destroys data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {!streamer.deletedAt ? (
+            <>
+              <section className="space-y-2">
+                <h3 className="text-sm font-medium">Disable — reversible</h3>
+                <p className="text-xs text-muted-foreground">
+                  Synchronisation stops. Everything already collected stays, the token stays, and
+                  the streamer keeps appearing in reports. Enable it again at any time.
+                </p>
+                <ActiveTogglePanel streamerId={streamer.id} active={streamer.active} />
+              </section>
+
+              <Separator />
+
+              <section className="space-y-2">
+                <h3 className="text-sm font-medium">Remove from roster — data kept</h3>
+                <p className="text-xs text-muted-foreground">
+                  For a streamer who has left. They disappear from the roster and stop syncing, but
+                  their {postCount} post{postCount === 1 ? "" : "s"} and {videoCount} video
+                  {videoCount === 1 ? "" : "s"} remain in the system and in historical reports. The
+                  stored Page token is destroyed.
+                </p>
+                <DeletePanel streamerId={streamer.id} streamerCode={streamer.streamerCode} />
+              </section>
+
+              <Separator />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              This streamer was removed from the roster on {formatWhen(streamer.deletedAt)}. Its
+              content is still stored and still counted in reports. Deleting permanently is the only
+              remaining option.
+            </p>
+          )}
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium text-destructive">
+              Delete permanently — cannot be undone
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Removes the streamer and every post, video, comment, analysis, metric and sync run
+              belonging to it. Use this for a Page added by mistake, a test entry, or a deletion
+              request — not for someone who has simply left.
+            </p>
+            <PurgePanel
+              streamerId={streamer.id}
+              streamerCode={streamer.streamerCode}
+              footprint={footprint}
+            />
+          </section>
+        </CardContent>
+      </Card>
     </>
   );
 }

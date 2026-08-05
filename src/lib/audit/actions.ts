@@ -23,6 +23,14 @@ export const AUDIT_ACTIONS = {
   streamerDisabled: "streamer.disabled",
   streamerEnabled: "streamer.enabled",
   streamerDeleted: "streamer.deleted",
+  /**
+   * Irreversible removal of a streamer and everything collected for it.
+   *
+   * Distinct from `streamer.deleted`, which retires a record and keeps the
+   * content. This entry is the only remaining evidence that the streamer ever
+   * existed, so its metadata carries the identity and the destroyed counts.
+   */
+  streamerPurged: "streamer.purged",
   streamerSyncRequested: "streamer.sync_requested",
 
   // Phase 4 — synchronisation
@@ -85,7 +93,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.streamerUpdated]: "Streamer updated",
   [AUDIT_ACTIONS.streamerDisabled]: "Streamer disabled",
   [AUDIT_ACTIONS.streamerEnabled]: "Streamer enabled",
-  [AUDIT_ACTIONS.streamerDeleted]: "Streamer deleted",
+  [AUDIT_ACTIONS.streamerDeleted]: "Streamer removed from roster",
+  [AUDIT_ACTIONS.streamerPurged]: "Streamer permanently deleted",
   [AUDIT_ACTIONS.streamerSyncRequested]: "Manual sync requested",
   [AUDIT_ACTIONS.postsSynced]: "Posts synchronised",
   [AUDIT_ACTIONS.commentsSynced]: "Comments synchronised",

@@ -88,3 +88,18 @@ export const listStreamersQuerySchema = z.object({
 });
 
 export type ListStreamersQuery = z.infer<typeof listStreamersQuerySchema>;
+
+/**
+ * The phrase that must be typed to destroy a streamer and all of its data.
+ *
+ * Deliberately not the streamer code on its own — that is what the reversible
+ * removal already asks for. Two irreversible-looking fields accepting the same
+ * six characters is how the wrong one gets filled in from muscle memory, and
+ * only one of the two can be undone. This one names the consequence.
+ *
+ * Lives here rather than beside the action because a `"use server"` module may
+ * export only async functions; a plain one throws at module evaluation.
+ */
+export function purgeConfirmationFor(streamerCode: string): string {
+  return `DELETE ALL ${streamerCode}`;
+}

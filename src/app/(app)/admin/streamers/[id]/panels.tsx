@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import {
   deleteStreamerAction,
+  purgeStreamerAction,
   replaceTokenAction,
   requestSyncAction,
   setStreamerActiveAction,
@@ -14,6 +15,7 @@ import {
   validateTokenAction,
 } from "@/app/(app)/admin/streamers/actions";
 import { idleState, type ActionState } from "@/lib/forms/action-state";
+import { purgeConfirmationFor } from "@/lib/validation/streamers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -264,13 +266,106 @@ export function DeletePanel({
           required
         />
         <p className="text-xs text-muted-foreground">
-          Soft delete. The record and its sync history are kept, the streamer is deactivated, and
-          the stored Page token is destroyed. The code and Page ID become reusable.
+          The posts, videos, comments and analyses stay in the system and keep appearing in
+          historical reports. The streamer leaves the roster, stops syncing, and its stored Page
+          token is destroyed. The code and Page ID become reusable.
+        </p>
+      </div>
+
+      <Submit pendingLabel="Removing…" variant="outline" size="sm">
+        Remove from roster
+      </Submit>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Permanent deletion, with the size of the loss stated before the decision.
+ *
+ * The counts are the point. "Delete this streamer" and "delete forty thousand
+ * comments that Meta will not serve again" are the same click, and only the
+ * first is what the wording suggests. Nothing here is recoverable — Meta's
+ * insight retention window has long passed for older content.
+ */
+export function PurgePanel({
+  streamerId,
+  streamerCode,
+  footprint,
+}: {
+  streamerId: string;
+  streamerCode: string;
+  footprint: {
+    posts: number;
+    videos: number;
+    comments: number;
+    summaries: number;
+    postInsights: number;
+    videoInsights: number;
+    canonicalMetrics: number;
+    syncRuns: number;
+  };
+}) {
+  const [state, formAction] = useActionState(purgeStreamerAction, idleState);
+  useActionToast(state);
+
+  const phrase = purgeConfirmationFor(streamerCode);
+  const format = new Intl.NumberFormat("en-GB");
+
+  const rows: { label: string; value: number }[] = [
+    { label: "Posts", value: footprint.posts },
+    { label: "Videos", value: footprint.videos },
+    { label: "Comments", value: footprint.comments },
+    { label: "Comment analyses", value: footprint.summaries },
+    { label: "Post insights", value: footprint.postInsights },
+    { label: "Video insights", value: footprint.videoInsights },
+    { label: "Canonical metrics", value: footprint.canonicalMetrics },
+    { label: "Sync runs", value: footprint.syncRuns },
+  ];
+
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+
+  return (
+    <form action={formAction} className="space-y-3">
+      <input type="hidden" name="id" value={streamerId} />
+      <input type="hidden" name="streamerCode" value={streamerCode} />
+
+      <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
+        <p className="text-xs font-medium">
+          {format.format(total)} row{total === 1 ? "" : "s"} will be destroyed
+        </p>
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+          {rows.map((row) => (
+            <div key={row.label} className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">{row.label}</dt>
+              <dd className="font-mono">{format.format(row.value)}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="confirm-purge">
+          Type <span className="font-mono font-semibold">{phrase}</span> to confirm
+        </Label>
+        <Input
+          id="confirm-purge"
+          name="confirm"
+          autoComplete="off"
+          className="font-mono"
+          placeholder={phrase}
+          required
+        />
+        <p className="text-xs text-muted-foreground">
+          This cannot be undone and there is no backup. Meta will not re-serve insights for older
+          content, so anything deleted here is gone even if the Page is re-added. Only the audit
+          entry recording this deletion survives.
         </p>
       </div>
 
       <Submit pendingLabel="Deleting…" variant="destructive" size="sm">
-        Delete streamer
+        Permanently delete everything
       </Submit>
     </form>
   );

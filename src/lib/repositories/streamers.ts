@@ -10,6 +10,7 @@ import {
   isNull,
   notInArray,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 
@@ -17,6 +18,7 @@ import { getServerEnv } from "@/config/env";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { encryptToken, decryptToken, lastFourOf, maskFromLastFour } from "@/lib/crypto/tokens";
 import { getDb } from "@/lib/db";
+import { resultRows } from "@/lib/db/params";
 import { auditLogs, streamers, syncRuns } from "@/lib/db/schema";
 import { extendPageToken, type TokenExtension } from "@/lib/meta/token-extension";
 import { validatePageToken } from "@/lib/meta/token-validation";
@@ -627,6 +629,152 @@ export async function softDeleteStreamer(params: {
     });
 
     return { ok: true as const, data: { id: params.id, streamerCode: existing.streamerCode } };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Permanent deletion
+// ---------------------------------------------------------------------------
+
+export type StreamerFootprint = {
+  posts: number;
+  videos: number;
+  comments: number;
+  summaries: number;
+  postInsights: number;
+  videoInsights: number;
+  canonicalMetrics: number;
+  syncRuns: number;
+};
+
+/**
+ * Everything a permanent delete would destroy, counted.
+ *
+ * Shown next to the confirmation field. "Delete this streamer" and "delete
+ * eighteen months of collected engagement data that cannot be re-fetched from
+ * Meta beyond its retention window" are the same click, and only one of those
+ * is what the wording suggests. The counts are what make the second reading
+ * visible before the decision rather than after it.
+ */
+export async function countStreamerFootprint(id: string): Promise<StreamerFootprint> {
+  const db = getDb();
+
+  const rows = await db.execute<Record<keyof StreamerFootprint, number>>(sql`
+    select
+      (select count(*) from posts where streamer_id = ${id})::int as posts,
+      (select count(*) from videos where streamer_id = ${id})::int as videos,
+      (select count(*) from comments c
+        where exists (select 1 from posts p where p.id = c.post_id and p.streamer_id = ${id})
+           or exists (select 1 from videos v where v.id = c.video_id and v.streamer_id = ${id})
+      )::int as comments,
+      (select count(*) from comment_summaries s
+        where exists (select 1 from posts p where p.id = s.post_id and p.streamer_id = ${id})
+           or exists (select 1 from videos v where v.id = s.video_id and v.streamer_id = ${id})
+      )::int as summaries,
+      (select count(*) from post_insights i
+        where exists (select 1 from posts p where p.id = i.post_id and p.streamer_id = ${id})
+      )::int as post_insights,
+      (select count(*) from video_insights i
+        where exists (select 1 from videos v where v.id = i.video_id and v.streamer_id = ${id})
+      )::int as video_insights,
+      (select count(*) from content_metrics_current where streamer_id = ${id})::int
+        as canonical_metrics,
+      (select count(*) from sync_runs where streamer_id = ${id})::int as sync_runs
+  `);
+
+  const row = resultRows<Record<string, number>>(rows)[0];
+
+  return {
+    posts: row?.["posts"] ?? 0,
+    videos: row?.["videos"] ?? 0,
+    comments: row?.["comments"] ?? 0,
+    summaries: row?.["summaries"] ?? 0,
+    postInsights: row?.["post_insights"] ?? 0,
+    videoInsights: row?.["video_insights"] ?? 0,
+    canonicalMetrics: row?.["canonical_metrics"] ?? 0,
+    syncRuns: row?.["sync_runs"] ?? 0,
+  };
+}
+
+/**
+ * Delete a streamer and everything collected for it. Irreversible.
+ *
+ * ## How this differs from `softDeleteStreamer`
+ *
+ * The soft delete retires a streamer: the row stays, its posts, videos,
+ * comments and analyses stay, and the sync history stays meaningful. It is the
+ * right choice almost always, and it is what "remove" means for a person who
+ * has left the roster but whose past performance still belongs in a report.
+ *
+ * This is for the other case — a Page added by mistake, a test entry, a
+ * withdrawal request. It takes the content with it, and none of it can be
+ * recovered: Meta will not re-serve insights beyond its own retention window,
+ * so a post collected last year is gone for good.
+ *
+ * ## What survives, and why
+ *
+ * The audit entry. `audit_logs.entity_id` is a plain column with no foreign key
+ * precisely so the trail outlives the record it describes — "who removed
+ * CBS-014, when, and how much went with it" has to remain answerable after the
+ * row is gone. It is written inside the same transaction, before the delete, so
+ * a failed delete cannot leave a log claiming otherwise.
+ *
+ * ## What is deleted explicitly
+ *
+ * Posts, videos and canonical metrics cascade from the streamer row; comments,
+ * summaries and insights cascade from those. `sync_runs.streamer_id` is
+ * `on delete set null`, which would leave this streamer's child runs orphaned
+ * and shaped exactly like top-level automation runs — so they are removed
+ * outright rather than left to be misread as sweeps that never ended.
+ */
+export async function purgeStreamer(params: {
+  actorId: string;
+  id: string;
+}): Promise<
+  StreamerOutcome<{ id: string; streamerCode: string; destroyed: StreamerFootprint }>
+> {
+  const db = getDb();
+
+  // Counted outside the transaction: it is eight aggregate reads over the
+  // largest tables in the schema, and holding a row lock across them buys
+  // nothing. A concurrent sync could add a post between here and the delete;
+  // that post is deleted too, and the recorded count is off by one — which is a
+  // better trade than serialising the sweep behind an administrative action.
+  const destroyed = await countStreamerFootprint(params.id);
+
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select(PUBLIC_COLUMNS)
+      .from(streamers)
+      .where(eq(streamers.id, params.id))
+      .for("update");
+
+    if (!existing) return fail("not_found", "That streamer no longer exists.");
+
+    // Before the delete, and in the same transaction. An audit row written
+    // afterwards can describe a deletion that was rolled back.
+    await tx.insert(auditLogs).values({
+      userId: params.actorId,
+      action: AUDIT_ACTIONS.streamerPurged,
+      entityType: AUDIT_ENTITY_TYPES.streamer,
+      entityId: params.id,
+      metadataJson: {
+        streamerCode: existing.streamerCode,
+        streamerName: existing.streamerName,
+        pageId: existing.pageId,
+        pageName: existing.pageName,
+        wasSoftDeleted: existing.deletedAt !== null,
+        destroyed,
+      },
+    });
+
+    await tx.delete(syncRuns).where(eq(syncRuns.streamerId, params.id));
+    await tx.delete(streamers).where(eq(streamers.id, params.id));
+
+    return {
+      ok: true as const,
+      data: { id: params.id, streamerCode: existing.streamerCode, destroyed },
+    };
   });
 }
 

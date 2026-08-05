@@ -43,20 +43,31 @@ function formatWhen(value: Date | null): string {
 export default async function AdminStreamersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string }>;
+  searchParams: Promise<{ search?: string; removed?: string; purged?: string }>;
 }) {
   await requireAdmin();
 
   const params = await searchParams;
   const search = params.search?.trim();
+  /*
+   * Removed streamers are hidden by default and reachable on request.
+   *
+   * Not merely a convenience: removal is reversible in the sense that the data
+   * survives, but the row it lives on is invisible — so without this, deciding
+   * later to delete one permanently, or checking what a departed streamer still
+   * holds, would need database access.
+   */
+  const includeRemoved = params.removed === "1";
 
   const streamers = await listStreamers({
-    includeDeleted: false,
+    includeDeleted: includeRemoved,
     activeOnly: false,
     ...(search ? { search } : {}),
   });
 
-  const needingAttention = streamers.filter((s) => tokenNeedsAttention(s.tokenStatus));
+  const needingAttention = streamers.filter(
+    (s) => s.deletedAt === null && tokenNeedsAttention(s.tokenStatus),
+  );
 
   return (
     <>
@@ -89,13 +100,40 @@ export default async function AdminStreamersPage({
         </Card>
       ) : null}
 
+      {params.purged ? (
+        <Card className="border-emerald-500/40">
+          <CardHeader>
+            <CardTitle className="text-base">{params.purged} was permanently deleted</CardTitle>
+            <CardDescription>
+              The streamer and all of its content are gone. The audit trail retains who did it, when
+              and how much was destroyed — that entry is all that remains.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Roster</CardTitle>
-          <CardDescription>
-            {streamers.length} streamer{streamers.length === 1 ? "" : "s"}. Tokens are stored
-            encrypted and shown only as their last four characters.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">Roster</CardTitle>
+              <CardDescription>
+                {streamers.length} streamer{streamers.length === 1 ? "" : "s"}. Tokens are stored
+                encrypted and shown only as their last four characters.
+              </CardDescription>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={
+                  includeRemoved
+                    ? `/admin/streamers${search ? `?search=${encodeURIComponent(search)}` : ""}`
+                    : `/admin/streamers?removed=1${search ? `&search=${encodeURIComponent(search)}` : ""}`
+                }
+              >
+                {includeRemoved ? "Hide removed" : "Show removed"}
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">
@@ -142,9 +180,18 @@ export default async function AdminStreamersPage({
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={streamer.active ? "secondary" : "outline"}>
-                        {streamer.active ? "Active" : "Disabled"}
-                      </Badge>
+                      {/* Removed outranks disabled: a removed streamer is
+                          always inactive, so showing "Disabled" here would be
+                          true and useless. */}
+                      {streamer.deletedAt ? (
+                        <Badge variant="outline" className="text-destructive">
+                          Removed
+                        </Badge>
+                      ) : (
+                        <Badge variant={streamer.active ? "secondary" : "outline"}>
+                          {streamer.active ? "Active" : "Disabled"}
+                        </Badge>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -154,7 +201,9 @@ export default async function AdminStreamersPage({
                     <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                       {search
                         ? `No streamers match “${search}”.`
-                        : "No streamers yet. Add the first one to get started."}
+                        : includeRemoved
+                          ? "No streamers, removed or otherwise."
+                          : "No streamers yet. Add the first one to get started."}
                     </TableCell>
                   </TableRow>
                 ) : null}
