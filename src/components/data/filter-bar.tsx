@@ -11,6 +11,7 @@ import { buildBrowseHref, type BrowseQuery } from "@/lib/filters/browse";
 import {
   CONTENT_SCOPES,
   CONTENT_SCOPE_LABELS,
+  DEFAULT_PERIOD,
   PERIOD_LABELS,
   PERIOD_PRESETS,
   toIsoDate,
@@ -109,8 +110,10 @@ export function FilterBar<K extends string>({
   };
 
   const isCustom = query.period.preset === "custom";
+  // Against the constant, not a literal. Hardcoding the default here meant
+  // "Clear filters" appeared on an untouched page the moment the default moved.
   const isFiltered =
-    query.period.preset !== "30d" ||
+    query.period.preset !== DEFAULT_PERIOD ||
     query.scope !== "all" ||
     query.streamerId !== undefined ||
     query.search !== undefined;

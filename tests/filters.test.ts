@@ -302,7 +302,13 @@ describe("href building", () => {
   const defaultSort: SortState<PostSortKey> = { key: "createdTime", direction: "desc" };
 
   const query = resolveBrowseQuery({
-    raw: { period: "7d", streamerId: "3f0a5b6c-1d2e-4f3a-8b9c-0d1e2f3a4b5c", search: "ranked" },
+    /*
+     * A non-default period on purpose. `buildBrowseHref` omits anything equal
+     * to the default, so asserting a preserved `period=` with the default
+     * selected would assert the opposite of what the builder does — and would
+     * silently start passing again the next time the default moves.
+     */
+    raw: { period: "30d", streamerId: "3f0a5b6c-1d2e-4f3a-8b9c-0d1e2f3a4b5c", search: "ranked" },
     sortKeys,
     defaultSort,
     now: NOW,
@@ -316,7 +322,7 @@ describe("href building", () => {
   it("preserves every other filter when one changes", () => {
     const href = buildBrowseHref("/posts", query, defaultSort, { sort: "shares", dir: "asc" });
 
-    expect(href).toContain("period=7d");
+    expect(href).toContain("period=30d");
     expect(href).toContain("streamerId=3f0a5b6c-1d2e-4f3a-8b9c-0d1e2f3a4b5c");
     expect(href).toContain("search=ranked");
     expect(href).toContain("sort=shares");

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  DEFAULT_PERIOD,
   resolveContentScope,
   resolvePeriod,
   type ContentScope,
@@ -127,8 +128,18 @@ export function buildBrowseHref<K extends string>(
 ): string {
   const next = new URLSearchParams();
 
+  /*
+   * Compared against the constant, not a repeated literal.
+   *
+   * This read `!== "30d"`, which was the default when it was written. Moving
+   * the default to a week left every "clean" link carrying `?period=7d` — the
+   * parameter no longer matched the thing it was supposed to be omitted for.
+   * Harmless to look at and wrong in the way that matters: `/posts` and
+   * `/posts?period=7d` stopped being the same URL, so a shared link and a
+   * bookmark diverged from the page they were copied from.
+   */
   const period = overrides.period ?? query.period.preset;
-  if (period !== "30d") next.set("period", period);
+  if (period !== DEFAULT_PERIOD) next.set("period", period);
 
   if (period === "custom") {
     const from =

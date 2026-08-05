@@ -30,8 +30,19 @@ export const PERIOD_LABELS: Record<PeriodPreset, string> = {
   all: "All time",
 };
 
-/** The default: broad enough to show something, narrow enough to stay fast. */
-export const DEFAULT_PERIOD: PeriodPreset = "30d";
+/**
+ * The default window every screen opens on.
+ *
+ * A week, because a performance dashboard is checked to see what changed
+ * recently, and a month averages a bad week into a fine one.
+ *
+ * The trade-off is real and worth stating: on a roster that posts
+ * infrequently, seven days can be genuinely empty — on 5 August 2026, with one
+ * streamer, it was. That is the screen telling the truth about a quiet week
+ * rather than a fault, and every other window is one click away. The figure
+ * stops being awkward as soon as the roster is more than a couple of Pages.
+ */
+export const DEFAULT_PERIOD: PeriodPreset = "7d";
 
 export type ResolvedPeriod = {
   preset: PeriodPreset;
