@@ -9,11 +9,29 @@ import { getDb } from "@/lib/db";
 import { syncRuns } from "@/lib/db/schema";
 import { childLogger } from "@/lib/observability/logger";
 import { authenticateMachineRequest, machineAuthErrorResponse } from "@/lib/security/machine-auth";
+import { backfillCommentAnalysis } from "@/lib/services/comment-backfill";
 import { openSyncAllRun, resolveSyncCeilings, runSyncAll } from "@/lib/services/sync-all";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+/**
+ * The share of the invocation the sweep and the drain may use between them.
+ *
+ * Below `maxDuration`, with headroom: a function killed at the ceiling returns
+ * nothing at all — no counts, no reason, no record that it ran — so the point
+ * of a budget is to stop *before* that and say where things stand.
+ */
+const BACKFILL_WINDOW_MS = 270_000;
+
+/**
+ * Below this, do not start draining.
+ *
+ * A slice with seconds left collects a handful of items and reports a stop
+ * reason, which is noise. The next run picks the same work up regardless.
+ */
+const MIN_BACKFILL_MS = 20_000;
 
 /**
  * GET /api/cron/daily-sync
@@ -159,8 +177,46 @@ export async function GET(request: Request) {
    * prevent.
    */
   after(async () => {
+    const startedAt = Date.now();
+
     try {
-      await runSyncAll({ syncRunId });
+      const result = await runSyncAll({ syncRunId });
+
+      /*
+       * ---- Then drain the backlog with whatever time is left ---------------
+       *
+       * The sweep only refreshes comments for the ten newest posts and videos
+       * per streamer. Everything older is never reached by it at all, so
+       * without this the roster stays permanently part-analysed no matter how
+       * many nights pass.
+       *
+       * Ordered after the sweep's run row is closed, deliberately. This work
+       * shares the invocation's `maxDuration`, and a function killed here must
+       * not be able to leave a sweep stuck in `running` — the one state a
+       * polling workflow cannot recover from. By this point the run is
+       * finished either way, and the backfill's own progress is durable per
+       * item, so being killed mid-drain costs nothing but the remainder.
+       *
+       * Skipped when streamers are still pending: the next invocation of this
+       * run has more sweeping to do, and collecting new content matters more
+       * than reaching old content.
+       */
+      if (result.finished) {
+        const remainingMs = BACKFILL_WINDOW_MS - (Date.now() - startedAt);
+
+        if (remainingMs >= MIN_BACKFILL_MS) {
+          const backfill = await backfillCommentAnalysis({ timeBudgetMs: remainingMs });
+
+          log.info("cron.backfill_finished", {
+            stoppedBecause: backfill.stoppedBecause,
+            collected: backfill.collection.collected,
+            analysed: backfill.analysis.completed + backfill.analysis.noComments,
+            remaining: backfill.remaining,
+          });
+        } else {
+          log.info("cron.backfill_skipped", { reason: "no_time_left", remainingMs });
+        }
+      }
     } catch (cause) {
       // `runSyncAll` closes its own run on failure; this is the last resort. An
       // uncaught rejection would leave the run stuck in `running`, and the
