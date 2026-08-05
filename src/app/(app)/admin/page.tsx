@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
-import { PhaseNotice } from "@/components/layout/phase-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,11 +51,13 @@ export default async function AdminPage() {
         description="Administration for users, Facebook Page connections and synchronisation jobs."
       />
 
-      <PhaseNotice phase={5}>
-        User and streamer management are live, including Page token storage and validation. The
-        engine that executes queued syncs arrives in Phase 5.
-      </PhaseNotice>
-
+      {/*
+       * The notice that used to sit here promised the sync engine "arrives in
+       * Phase 5". It arrived; it has been collecting nightly for weeks. A
+       * banner announcing that a live feature is still to come is worse than no
+       * banner — it invites an operator to disbelieve what the screens below
+       * are telling them.
+       */}
       <div className="grid gap-4 sm:grid-cols-2">
         {adminAreas.map((area) => (
           <Card key={area.title} className="flex flex-col">

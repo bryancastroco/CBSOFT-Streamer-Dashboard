@@ -529,8 +529,13 @@ export async function requestSyncAction(
 
   revalidatePath(`/admin/streamers/${id.data}`);
 
+  /*
+   * Said "arrives in Phase 5" for months after it arrived. A queued run is now
+   * picked up by the nightly sweep or by the next automation trigger, and
+   * saying so is the difference between "this worked" and "this is a stub".
+   */
   return {
     status: "success",
-    message: "Manual sync queued. The sync engine that runs it arrives in Phase 5.",
+    message: "Manual sync queued. The next automation sweep will run it.",
   };
 }

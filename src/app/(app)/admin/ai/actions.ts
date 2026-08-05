@@ -1,7 +1,7 @@
 "use server";
 
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
-import { AI_FAILURE_LABELS } from "@/lib/ai/provider";
+import { AI_FAILURE_LABELS, AI_PROVIDER_KEY_VARIABLES } from "@/lib/ai/provider";
 import { getConfiguredProvider } from "@/lib/ai/resolve";
 import { listGeminiModels } from "@/lib/ai/gemini";
 import { getServerEnvSafe } from "@/config/env";
@@ -126,13 +126,24 @@ export async function testAiConnectionAction(): Promise<AiTestState> {
      * Construction fails when the key is absent entirely — a different problem
      * from one that is present and refused, and worth saying so.
      */
+    /*
+     * Names the key the *configured* provider needs.
+     *
+     * It used to say `ANTHROPIC_API_KEY` unconditionally, which on a Gemini
+     * deployment is advice that cannot work — and this project has already lost
+     * days to an error message pointing at the wrong thing. The variable to set
+     * is a property of `AI_PROVIDER`, so it is read from there.
+     */
+    const missing = /API_KEY/i.test(cause instanceof Error ? cause.message : "");
+    const env = getServerEnvSafe();
+    const variable = env.ok ? AI_PROVIDER_KEY_VARIABLES[env.env.AI_PROVIDER] : null;
+
     return {
       status: "error",
       category: "authentication",
-      message:
-        cause instanceof Error && /ANTHROPIC_API_KEY/i.test(cause.message)
-          ? "No API key is configured. Set ANTHROPIC_API_KEY in Vercel and redeploy."
-          : "The AI provider could not be initialised.",
+      message: missing
+        ? `No API key is configured. Set ${variable ?? "the provider's API key"} in Vercel and redeploy.`
+        : "The AI provider could not be initialised.",
     };
   }
 

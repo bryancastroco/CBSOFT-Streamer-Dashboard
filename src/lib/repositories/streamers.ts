@@ -696,6 +696,49 @@ export async function countStreamerFootprint(id: string): Promise<StreamerFootpr
   };
 }
 
+export type StreamerRemovalView = {
+  id: string;
+  streamerCode: string;
+  active: boolean;
+  deletedAt: Date | null;
+  postCount: number;
+  videoCount: number;
+  footprint: StreamerFootprint;
+};
+
+/**
+ * Everything the removal card needs, in one call.
+ *
+ * Exists so the two screens offering removal fetch identically. The card itself
+ * is a presentational component taking props — data access lives in `page.tsx`
+ * by project convention, and a shared component importing repositories would
+ * sit outside the server-only allow-list for good reason. Putting the *query*
+ * in one place gets the same anti-drift property without weakening that rule:
+ * each page calls this and passes the result through, and TypeScript refuses a
+ * caller that supplies less.
+ *
+ * Returns null rather than throwing, so a caller that has already resolved the
+ * streamer can decide what a missing row means for its own layout.
+ */
+export async function getStreamerRemovalView(id: string): Promise<StreamerRemovalView | null> {
+  const [streamer, footprint] = await Promise.all([
+    getStreamerById(id),
+    countStreamerFootprint(id),
+  ]);
+
+  if (!streamer) return null;
+
+  return {
+    id: streamer.id,
+    streamerCode: streamer.streamerCode,
+    active: streamer.active,
+    deletedAt: streamer.deletedAt,
+    postCount: footprint.posts,
+    videoCount: footprint.videos,
+    footprint,
+  };
+}
+
 /**
  * Delete a streamer and everything collected for it. Irreversible.
  *

@@ -78,3 +78,20 @@ export const AI_FAILURE_LABELS: Record<AiFailureCategory, string> = {
   invalid_response: "Invalid response",
   unknown: "Unknown error",
 };
+
+/**
+ * The environment variable that supplies each provider's credential.
+ *
+ * Pure, and here rather than beside the settings screen, because two places
+ * need to tell an operator which key to set — the AI settings page and the
+ * connection test — and they must not disagree. The test used to say
+ * `ANTHROPIC_API_KEY` unconditionally, which on a Gemini deployment is advice
+ * that cannot work.
+ *
+ * `offline` has no key, which is the entire point of it.
+ */
+export const AI_PROVIDER_KEY_VARIABLES: Record<AiProviderName, string | null> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  offline: null,
+};

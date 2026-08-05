@@ -5,12 +5,11 @@ import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, ExternalLink, Settings2 } from "lucide-react";
 
 import {
-  ActiveTogglePanel,
-  DeletePanel,
   EditStreamerPanel,
   SyncPanel,
   TokenPanel,
 } from "@/app/(app)/admin/streamers/[id]/panels";
+import { StreamerRemovalCard } from "@/app/(app)/admin/streamers/[id]/removal-card";
 import { SyncPostsPanel } from "@/app/(app)/admin/streamers/[id]/sync-posts-panel";
 import { SyncVideosPanel } from "@/app/(app)/admin/streamers/[id]/sync-videos-panel";
 import {
@@ -58,6 +57,7 @@ import { listPosts } from "@/lib/repositories/posts";
 import {
   getStreamerById,
   getStreamerIdentity,
+  getStreamerRemovalView,
   listStreamerOptions,
   listSyncRunsForStreamer,
 } from "@/lib/repositories/streamers";
@@ -469,7 +469,10 @@ async function SyncHistoryTab({ streamerId }: { streamerId: string }) {
  * Server Action before mutating anything.
  */
 async function SettingsTab({ streamerId }: { streamerId: string }) {
-  const streamer = await getStreamerById(streamerId);
+  const [streamer, removal] = await Promise.all([
+    getStreamerById(streamerId),
+    getStreamerRemovalView(streamerId),
+  ]);
   if (!streamer) notFound();
 
   const grantedScopes = new Set(streamer.tokenScopes);
@@ -584,22 +587,18 @@ async function SettingsTab({ streamerId }: { streamerId: string }) {
             </CardContent>
           </Card>
 
-          <Card className="border-destructive/40">
-            <CardHeader>
-              <CardTitle className="text-base">Danger zone</CardTitle>
-              <CardDescription>
-                Disabling stops synchronisation but keeps everything. Deleting also destroys the
-                stored Page token.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ActiveTogglePanel streamerId={streamer.id} active={streamer.active} />
-              <Separator />
-              <DeletePanel streamerId={streamer.id} streamerCode={streamer.streamerCode} />
-            </CardContent>
-          </Card>
         </>
       ) : null}
+
+      {/*
+       * Outside the `!deletedAt` branch, deliberately.
+       *
+       * A streamer already removed from the roster still has one option left —
+       * deleting it permanently — and hiding the card for those is what made
+       * that unreachable from this screen. The card itself decides which of the
+       * three to offer.
+       */}
+      {removal ? <StreamerRemovalCard streamer={removal} /> : null}
     </div>
   );
 }
