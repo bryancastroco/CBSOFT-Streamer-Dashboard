@@ -439,3 +439,85 @@ describe("the written reading, and paying for it once", () => {
     expect(aiMocks.analyze).not.toHaveBeenCalled();
   });
 });
+
+describe("a stored tally is a loan, not the final answer", () => {
+  it("asks the model again after a fallback was cached", async () => {
+    /*
+     * The freeze this prevents, and a mistake already made once on the
+     * per-post path.
+     *
+     * When the provider refuses, the counter's reading is stored so the panel
+     * renders. If that counted as a cache hit, the content would never change,
+     * so the hash would never move, so the model would never be asked again —
+     * no matter how much credit was added afterwards. The panel would show a
+     * tally for ever and nothing would explain why.
+     */
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    aiMocks.analyze.mockResolvedValueOnce({
+      ok: false,
+      category: "rate_limited",
+      message: "Prepayment credits are depleted.",
+      retryable: true,
+      provider: "gemini",
+      model: "gemini-flash-latest",
+    });
+
+    const refused = await getCommentOverview(filters());
+    expect(refused.provider).toBe("offline");
+
+    // Credit returns. Same content, same hash — and it must try again.
+    const recovered = await getCommentOverview(filters());
+
+    expect(aiMocks.analyze).toHaveBeenCalledTimes(2);
+    expect(recovered.provider).toBe("gemini");
+    expect(recovered.analysis.summary).toContain("migration");
+  });
+
+  it("replaces the stored tally rather than leaving it beside the real one", async () => {
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    aiMocks.analyze.mockResolvedValueOnce({
+      ok: false,
+      category: "unavailable",
+      message: "High demand.",
+      retryable: true,
+      provider: "gemini",
+      model: "gemini-flash-latest",
+    });
+
+    await getCommentOverview(filters());
+    await getCommentOverview(filters());
+
+    const stored = await client.query<{ ai_provider: string; n: string }>(
+      `select ai_provider, count(*)::text as n from comment_overview_summaries group by 1`,
+    );
+
+    // One row, upgraded — not two rows disagreeing about the same content.
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]?.ai_provider).toBe("gemini");
+  });
+
+  it("still serves a cached model answer without asking again", async () => {
+    // The saving has to survive the fix, or every render bills afresh.
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    await getCommentOverview(filters());
+    const second = await getCommentOverview(filters());
+
+    expect(aiMocks.analyze).toHaveBeenCalledTimes(1);
+    expect(second.cached).toBe(true);
+  });
+
+  it("treats a stored tally as final when the counter is the configured provider", async () => {
+    // Nothing to upgrade to. Recomputing every render would be pure waste.
+    aiMocks.provider.value = "offline";
+    await seedPost({ streamerId: alpha, handle: "p1", daysOld: 1, comments: ["ano po?"] });
+
+    await getCommentOverview(filters());
+    const second = await getCommentOverview(filters());
+
+    expect(second.cached).toBe(true);
+    expect(aiMocks.analyze).not.toHaveBeenCalled();
+  });
+});

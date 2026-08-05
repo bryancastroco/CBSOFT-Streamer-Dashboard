@@ -246,7 +246,27 @@ export async function getCommentOverview(
   const sourceHash = overviewSourceHash(rows, messages.length);
   const cached = await readCachedOverview(sourceHash);
 
-  if (cached) return { ...shape, analysis: cached.analysis, provider: cached.provider, cached: true };
+  /*
+   * A cached tally is not a hit while a real provider is configured.
+   *
+   * `writeOverviewAnalysis` falls back to the counter when the provider
+   * refuses — a depleted balance, a rate limit — and stores the result so the
+   * panel renders. Treating that as final would freeze the tally in place: the
+   * content has not changed, so the hash never moves, so the model is never
+   * asked again no matter how much credit is added afterwards.
+   *
+   * This is the same rule the per-post backfill follows, and the same mistake
+   * it already had to fix once: a local reading is a loan, never a
+   * substitution. Anything the model actually wrote is served straight from
+   * cache, which is the whole point.
+   */
+  const config = getServerEnv();
+  const modelWanted = config.AI_SUMMARIZATION_ENABLED && config.AI_PROVIDER !== "offline";
+  const usable = cached && !(cached.provider === "offline" && modelWanted);
+
+  if (cached && usable) {
+    return { ...shape, analysis: cached.analysis, provider: cached.provider, cached: true };
+  }
 
   const fresh = await writeOverviewAnalysis({
     sourceHash,
@@ -358,11 +378,33 @@ async function writeOverviewAnalysis(params: {
       commentCount: params.messages.length,
     })
     /*
-     * Two concurrent renders of the same selection race here, and both produce
-     * a valid answer. Ignoring the loser is correct — the winner is already
-     * stored and equally current.
+     * Overwrites rather than ignoring the conflict.
+     *
+     * A row for this content may already exist and be a tally, written while
+     * the provider was refusing. Once the model answers, that stand-in has to
+     * be replaced — leaving it would mean the reading never improves, which is
+     * exactly the freeze this whole path exists to avoid.
+     *
+     * Two concurrent renders both produce a valid answer, so the last writer
+     * winning is fine.
      */
-    .onConflictDoNothing({ target: commentOverviewSummaries.sourceHash });
+    .onConflictDoUpdate({
+      target: commentOverviewSummaries.sourceHash,
+      set: {
+        summary: sql`excluded.summary`,
+        sentiment: sql`excluded.sentiment`,
+        positivePointsJson: sql`excluded.positive_points_json`,
+        concernsJson: sql`excluded.concerns_json`,
+        suggestionsJson: sql`excluded.suggestions_json`,
+        questionsJson: sql`excluded.questions_json`,
+        urgentIssuesJson: sql`excluded.urgent_issues_json`,
+        aiProvider: sql`excluded.ai_provider`,
+        model: sql`excluded.model`,
+        contentSampled: sql`excluded.content_sampled`,
+        commentCount: sql`excluded.comment_count`,
+        generatedAt: sql`excluded.generated_at`,
+      },
+    });
 
   return { analysis, provider };
 }
