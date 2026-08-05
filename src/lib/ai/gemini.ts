@@ -393,6 +393,28 @@ export class GeminiProvider implements AiProvider {
         responseMimeType: "application/json",
         responseSchema: toGeminiSchema(COMMENT_ANALYSIS_JSON_SCHEMA),
         temperature: 0.2,
+        /*
+         * ---- Thinking off, and this is where the money was --------------
+         *
+         * Measured over 738 real analyses: 1,596 input tokens, 256 tokens of
+         * answer — and 1,683 tokens of *thinking*, billed at the output rate.
+         * Six and a half times the answer, for 87% of the output charge.
+         *
+         * That made each analysis cost $0.0198 rather than the $0.0055 a
+         * naive read of `candidatesTokenCount` suggests, which is how an
+         * estimate of $8 turned into a bill of nearly $12 — the thinking
+         * tokens are reported in a separate field and are easy to miss.
+         *
+         * Nothing here needs reasoning. The model is reading comments and
+         * filling in a fixed schema: tone, themes, questions, complaints.
+         * That is extraction and synthesis, not a problem to work through,
+         * and the constrained `responseSchema` already does the structural
+         * work a chain of thought would otherwise be doing.
+         *
+         * Models before the thinking generation ignore this field rather
+         * than rejecting it, so it is safe across the `-latest` alias moving.
+         */
+        thinkingConfig: { thinkingBudget: 0 },
       },
     };
 

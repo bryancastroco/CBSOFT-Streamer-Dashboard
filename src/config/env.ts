@@ -96,15 +96,26 @@ const serverEnvSchema = z
      *
      * Google retires model ids and restricts others to existing accounts, so a
      * pinned name is a default with an expiry date — `gemini-2.5-flash` was
-     * correct when written and rejected weeks later. `gemini-flash-latest`
-     * tracks the current flash variant, which is the right tier for comment
-     * analysis: short inputs, high volume, structured output, no reasoning
-     * requirement.
+     * correct when written and rejected weeks later. A `-latest` alias tracks
+     * whatever the current variant is.
      *
-     * If even this is unusable for a given key, the provider discovers a
-     * working model from the API rather than failing.
+     * ## Why Flash-Lite rather than Flash
+     *
+     * Measured, on 738 real analyses of this project's own comments: Flash
+     * costs $0.0198 each at standard rates, Flash-Lite $0.0053 — and that is
+     * before thinking was switched off. The work is reading comments and
+     * filling a fixed schema, which is extraction and synthesis rather than
+     * reasoning, so the cheaper tier is not a compromise here.
+     *
+     * That difference is the whole cost story at scale: one streamer's history
+     * is roughly 1,600 posts, and a roster of thirty is a five-figure number of
+     * analyses. Set `GEMINI_MODEL=gemini-flash-latest` to trade the money back
+     * for a slightly richer summary.
+     *
+     * If the configured model is unusable for a given key, the provider
+     * discovers a working one from the API rather than failing.
      */
-    GEMINI_MODEL: z.string().min(1).default("gemini-flash-latest"),
+    GEMINI_MODEL: z.string().min(1).default("gemini-flash-lite-latest"),
 
     /**
      * Fall back to in-process analysis when the provider cannot answer.
