@@ -25,6 +25,7 @@ import {
   TokenHealth,
   UrgentIssues,
 } from "@/components/dashboard/sections";
+import { CommentOverviewPanel } from "@/components/dashboard/comment-overview";
 import { AggregateMetricGroups } from "@/components/metrics/metric-group";
 import { FilterBar } from "@/components/data/filter-bar";
 import { PageHeader, SectionHeader } from "@/components/layout/page-header";
@@ -45,10 +46,23 @@ import {
   type DashboardFilters,
 } from "@/lib/repositories/dashboard";
 import { getMetricTotals } from "@/lib/repositories/canonical-metrics";
+import { getCommentOverview } from "@/lib/repositories/comment-overview";
 import { getSyncLogTotals, listSyncLogs } from "@/lib/repositories/sync-logs";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 
 export const metadata: Metadata = { title: "Dashboard" };
+
+/**
+ * One reading across every comment the filters select.
+ *
+ * Its own Suspense boundary because it reads the comment table rather than the
+ * pre-aggregated metric tables, and a reader should not wait on it to see the
+ * headline figures.
+ */
+async function Conversation({ params }: { params: RawParams }) {
+  const overview = await getCommentOverview(filtersFrom(params));
+  return <CommentOverviewPanel overview={overview} />;
+}
 
 /**
  * The dashboard shares the filter contract with every other screen, so a
@@ -385,6 +399,16 @@ export default async function DashboardPage({
       <Suspense key={`m-${key}`} fallback={<CardSkeleton count={8} />}>
         <Metrics params={params} />
       </Suspense>
+
+      <section className="space-y-3">
+        <SectionHeader
+          title="What people are saying"
+          description="Every comment in the current selection, pooled into one reading. Counted in-process — this costs nothing and is always current, whichever AI provider is configured."
+        />
+        <Suspense key={`co-${key}`} fallback={<CardSkeleton count={1} />}>
+          <Conversation params={params} />
+        </Suspense>
+      </section>
 
       <section className="space-y-3">
         <SectionHeader
