@@ -135,3 +135,71 @@ describe("the password rules", () => {
     expect(source).not.toMatch(/setPasswordSchema[\s\S]{0,600}\[A-Z\]/);
   });
 });
+
+/**
+ * The third way it was broken, found only by an audit entry that was missing.
+ *
+ * ## What happened
+ *
+ * Supabase's default `{{ .ConfirmationURL }}` verifies the token and then hands
+ * the session back in a **URL fragment** — `#access_token=…`. A fragment is
+ * never transmitted to the server. The callback saw no `code`, no `error_code`,
+ * and bounced to /login, which to the invitee is indistinguishable from a
+ * broken invitation: they land on a sign-in form and are asked for a password
+ * they were never offered the chance to create.
+ *
+ * The token was spent on the way, so the link was dead, and the next attempt
+ * reported `otp_expired` — the same misleading symptom as the original bug,
+ * from an unrelated cause.
+ *
+ * What made it hard to see is that it leaves no error anywhere. The only
+ * evidence was an audit entry that should have existed and did not: a user with
+ * `email_confirmed_at` and `last_sign_in_at` set by Supabase, but no
+ * `user.signed_in` from us, because the route returned before writing one.
+ *
+ * These assertions read the source rather than exercising the flow. The route
+ * needs a live Supabase to run, and the property worth protecting is structural:
+ * that the token-hash arrival shape is still handled at all.
+ */
+describe("the callback accepts the shape email links actually arrive in", () => {
+  it("verifies a token hash, not only a PKCE code", async () => {
+    const source = await readFile(SOURCE("app/(auth)/auth/callback/route.ts"), "utf8");
+
+    // Every link this product sends is generated server-side by an admin
+    // action, so there is no browser to have started a PKCE exchange. The
+    // token-hash path is the one that carries real traffic.
+    expect(source).toContain("token_hash");
+    expect(source).toContain("verifyOtp");
+  });
+
+  it("treats a token hash as a reason to continue, not to bounce", async () => {
+    const source = await readFile(SOURCE("app/(auth)/auth/callback/route.ts"), "utf8");
+
+    /*
+     * The regression this guards: a guard written as `if (!code)` sends every
+     * token-hash arrival to /login. It looks correct, it throws nothing, and it
+     * breaks every invitation.
+     */
+    expect(source).not.toMatch(/if\s*\(\s*errorCode\s*\|\|\s*!code\s*\)/);
+    expect(source).toMatch(/tokenHash\s*&&\s*otpType/);
+  });
+
+  it("redeems only the OTP types an email link should reach", async () => {
+    const source = await readFile(SOURCE("app/(auth)/auth/callback/route.ts"), "utf8");
+
+    // `type` arrives from a URL. Passing it through would let a caller choose
+    // which kind of token to redeem.
+    expect(source).toContain("ALLOWED_OTP_TYPES");
+
+    // Scoped to the list itself: the prose above it names the type that is
+    // deliberately excluded, so scanning the whole file would match the reason
+    // rather than the rule.
+    const list = source.match(/ALLOWED_OTP_TYPES\s*=\s*new Set<EmailOtpType>\(\[([\s\S]*?)\]\)/)?.[1];
+
+    expect(list).toBeDefined();
+    expect(list).toContain("invite");
+    expect(list).toContain("recovery");
+    // An email-change token must not be redeemable through an invitation link.
+    expect(list).not.toContain("email_change");
+  });
+});
