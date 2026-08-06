@@ -29,6 +29,18 @@ import { setPasswordSchema } from "@/lib/auth/validation";
 
 const SOURCE = (file: string) => path.join(process.cwd(), "src", file);
 
+/**
+ * Source with comments stripped.
+ *
+ * These assertions are about what the code *does*, and the prose beside it
+ * names the things being avoided — `inviteUserByEmail`, `action_link` — because
+ * explaining why they are absent is most of the value. Matching the whole file
+ * would fail on the explanation rather than the behaviour.
+ */
+function code(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
 describe("the invitation names where to come back to", () => {
   it("passes redirectTo rather than relying on the Site URL", async () => {
     const source = await readFile(SOURCE("lib/repositories/users.ts"), "utf8");
@@ -201,5 +213,52 @@ describe("the callback accepts the shape email links actually arrive in", () => 
     expect(list).toContain("recovery");
     // An email-change token must not be redeemable through an invitation link.
     expect(list).not.toContain("email_change");
+  });
+});
+
+/**
+ * Why the invitation is a link rather than an email.
+ *
+ * Supabase's own template ends in a URL fragment that never reaches a server,
+ * editing it needs a paid plan, and the free tier caps auth email at a handful
+ * an hour. All three point the same way: mint the link here, let the admin
+ * deliver it.
+ */
+describe("the invitation is generated, not emailed", () => {
+  it("mints a token instead of sending Supabase's template", async () => {
+    const source = await readFile(SOURCE("lib/repositories/users.ts"), "utf8");
+
+    expect(code(source)).toContain("generateLink");
+    // `inviteUserByEmail` sends the broken template. Its absence is the point.
+    expect(code(source)).not.toContain("inviteUserByEmail");
+  });
+
+  it("builds the link from the token, not from Supabase's action_link", async () => {
+    const source = await readFile(SOURCE("lib/repositories/users.ts"), "utf8");
+
+    /*
+     * `action_link` points at Supabase's verify endpoint, which redirects on
+     * with the session in a fragment — the exact failure being replaced. The
+     * link has to be assembled from `hashed_token` to arrive as a query string.
+     */
+    expect(code(source)).toContain("hashed_token");
+    expect(code(source)).toContain("token_hash");
+    expect(code(source)).not.toMatch(/action_link/);
+  });
+
+  it("returns the link to the caller so it can be shown once", async () => {
+    // Supabase stores only a hash, so there is no second chance to display it.
+    const source = await readFile(SOURCE("lib/repositories/users.ts"), "utf8");
+
+    expect(source).toMatch(/link:\s*callbackLink/);
+  });
+
+  it("offers a way back in for an account that already exists", async () => {
+    // An invitation never completed and a forgotten password end at the same
+    // screen, so they are one action rather than a trip to the Supabase console.
+    const source = await readFile(SOURCE("lib/repositories/users.ts"), "utf8");
+
+    expect(source).toContain("createPasswordLink");
+    expect(source).toMatch(/type:\s*"recovery"/);
   });
 });

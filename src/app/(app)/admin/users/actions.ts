@@ -6,6 +6,7 @@ import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
 import { inviteUserSchema, roleChangeSchema, setActiveSchema } from "@/lib/auth/validation";
 import {
   changeUserRole,
+  createPasswordLink,
   inviteUser,
   setUserActive,
   type ActivationRejection,
@@ -15,6 +16,14 @@ import {
 export type RoleChangeState = {
   status: "idle" | "success" | "error";
   message: string | null;
+  /**
+   * A sign-in link for the admin to deliver, shown once.
+   *
+   * Separate from `message` because it is not prose: the UI renders it in a
+   * field with a copy button, and only the hash of the token is stored, so
+   * there is no second chance to show it.
+   */
+  link?: string;
 };
 
 const REJECTION_MESSAGES: Record<RoleChangeRejection, string> = {
@@ -181,8 +190,47 @@ export async function inviteUserAction(
 
   return {
     status: "success",
-    message: `Invitation sent to ${outcome.email}. They will join as ${
+    message: `${outcome.email} added as ${
       outcome.role === "admin" ? "an admin" : "a viewer"
-    } once they set a password.`,
+    }. Send them this link — it is the only time it can be shown.`,
+    link: outcome.link,
+  };
+}
+
+/**
+ * A fresh sign-in link for somebody who already has an account.
+ *
+ * The escape hatch for an invitation that was never completed and for a
+ * forgotten password — one action, because both end at the same screen and an
+ * admin should not have to work out which case they are in.
+ */
+export async function sendPasswordLinkAction(
+  _previousState: RoleChangeState,
+  formData: FormData,
+): Promise<RoleChangeState> {
+  let actorId: string;
+
+  try {
+    actorId = (await assertAdmin()).id;
+  } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return { status: "error", message: error.message };
+    }
+    throw error;
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { status: "error", message: "No account was named." };
+
+  const outcome = await createPasswordLink({ actorId, userId });
+
+  if (!outcome.ok) return { status: "error", message: outcome.message };
+
+  revalidatePath("/admin/users");
+
+  return {
+    status: "success",
+    message: `Password link for ${outcome.email}. Send it to them — it is shown once.`,
+    link: outcome.link,
   };
 }

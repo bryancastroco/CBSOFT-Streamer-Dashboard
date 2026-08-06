@@ -254,16 +254,154 @@ export async function setUserActive(params: {
 export type InviteRejection = "already_exists" | "invite_failed";
 
 export type InviteOutcome =
-  | { ok: true; email: string; role: UserRole; userId: string }
+  | {
+      ok: true;
+      email: string;
+      role: UserRole;
+      userId: string;
+      /**
+       * The sign-in link, returned exactly once for the admin to deliver.
+       *
+       * Not emailed by us and not recoverable later — Supabase stores only a
+       * hash of the token. Losing it means generating another, which costs a
+       * click.
+       */
+      link: string;
+    }
   | { ok: false; reason: InviteRejection; message: string };
 
 /**
- * Invite someone by email.
+ * Turn an admin-generated OTP into a link that reaches our callback.
  *
- * Supabase sends the email and owns the credential entirely — the invitee sets
- * their own password through a link, and this application never sees, stores or
- * transmits one. That is the whole reason invitation is the right primitive
- * here rather than "create a user with a password".
+ * ## Why this is built by hand rather than taken from Supabase
+ *
+ * `generateLink` also returns `action_link`, and using it would be the obvious
+ * move. It points at Supabase's `/auth/v1/verify`, which redirects on with the
+ * session in a **URL fragment** — and a fragment never reaches a server. That
+ * is precisely the failure this replaces: the invitee lands on a sign-in form
+ * asking for a password they were never able to create, with the one-time token
+ * already spent.
+ *
+ * `hashed_token` is the same credential without the redirect wrapper, so a URL
+ * built from it arrives as a query string this application can actually read.
+ */
+function callbackLink(params: {
+  hashedToken: string;
+  type: "invite" | "recovery";
+  next: string;
+}): string {
+  const url = new URL(`${resolveAppOrigin()}/auth/callback`);
+  url.searchParams.set("token_hash", params.hashedToken);
+  url.searchParams.set("type", params.type);
+  url.searchParams.set("next", params.next);
+  return url.toString();
+}
+
+/**
+ * `generateLink` responses have moved the token around between versions.
+ *
+ * Read defensively from both shapes rather than trusting one: reading the wrong
+ * field returns `undefined`, which would become a link that looks plausible and
+ * fails on click — the exact class of bug this whole change exists to remove.
+ */
+function hashedTokenFrom(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+
+  const record = data as Record<string, unknown>;
+  const properties = record["properties"];
+
+  for (const source of [properties, record]) {
+    if (source && typeof source === "object") {
+      const value = (source as Record<string, unknown>)["hashed_token"];
+      if (typeof value === "string" && value.length > 0) return value;
+    }
+  }
+
+  return null;
+}
+
+export type PasswordLinkOutcome =
+  | { ok: true; email: string; link: string }
+  | { ok: false; message: string };
+
+/**
+ * A fresh link for somebody who already has an account.
+ *
+ * Covers the two situations that otherwise need the Supabase console: an
+ * invitation that was never completed, and a forgotten password. Both end at
+ * the same screen, so both are one action rather than two.
+ *
+ * Deliberately works for a deactivated account. Re-admitting somebody is
+ * "reactivate, then send them a way in", and refusing here would mean an admin
+ * has to remember to do those in the right order.
+ */
+export async function createPasswordLink(params: {
+  actorId: string;
+  userId: string;
+}): Promise<PasswordLinkOutcome> {
+  const db = getDb();
+
+  const [target] = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.id, params.userId))
+    .limit(1);
+
+  if (!target) return { ok: false, message: "That account no longer exists." };
+
+  const admin = createSupabaseAdminClient();
+
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email: target.email,
+  });
+
+  const hashedToken = hashedTokenFrom(data);
+
+  if (error || !hashedToken) {
+    return {
+      ok: false,
+      message: error?.message ?? "Supabase did not return a usable link.",
+    };
+  }
+
+  await db.insert(auditLogs).values({
+    userId: params.actorId,
+    action: AUDIT_ACTIONS.userInvited,
+    entityType: AUDIT_ENTITY_TYPES.user,
+    entityId: target.id,
+    // The address and the fact, never the token — an audit row outlives the
+    // link and is readable by every admin.
+    metadataJson: { targetEmail: target.email, kind: "password_link" },
+  });
+
+  return {
+    ok: true,
+    email: target.email,
+    link: callbackLink({ hashedToken, type: "recovery", next: "/auth/set-password" }),
+  };
+}
+
+/**
+ * Invite someone, and hand the admin a link to deliver.
+ *
+ * Supabase owns the credential entirely — the invitee sets their own password
+ * through the link, and this application never sees, stores or transmits one.
+ * That is the whole reason invitation is the right primitive here rather than
+ * "create a user with a password".
+ *
+ * ## Why this generates a link instead of sending an email
+ *
+ * `inviteUserByEmail` sends Supabase's own template, and that template ends in
+ * a URL fragment carrying the session. A fragment never reaches a server, so
+ * every invitation this product sent landed the invitee on a sign-in form
+ * asking for a password they had not been given the chance to create — with the
+ * one-time token already spent, so the link was dead.
+ *
+ * Fixing the template is Pro-only, and the free tier caps auth emails at a
+ * handful an hour besides. Generating the link removes both constraints and the
+ * mail provider along with them: the admin sends it however they already talk
+ * to the person, which is what they were doing for Page connections anyway.
  *
  * A profile row appears by database trigger the moment the auth user is
  * created, always with role `viewer`. So an admin invite is two steps, and the
@@ -297,36 +435,37 @@ export async function inviteUser(params: {
   const admin = createSupabaseAdminClient();
 
   /*
-   * `redirectTo` is not optional in practice, and omitting it is what broke the
-   * first invitation sent from production.
-   *
-   * Without it Supabase falls back to the project's Site URL, which was still
-   * `http://localhost:3000` — so the invitee's browser refused the connection.
-   * The click had already spent the one-time token, so the second attempt
-   * reported `otp_expired`, which reads like a link left unopened for a day
-   * rather than one redirected to a machine that was never listening.
+   * `generateLink` creates the account and mints the token without sending
+   * anything. `redirectTo` is still passed so Supabase records it, but the link
+   * this function returns is built from `hashed_token` rather than taken from
+   * the response — see `callbackLink` for why the one Supabase hands back
+   * cannot work here.
    *
    * `resolveAppOrigin()` never derives from a request header, so this cannot
-   * become a host-header poisoning vector — an emailed link is precisely where
-   * that would matter.
+   * become a host-header poisoning vector — a link sent to somebody else is
+   * precisely where that would matter.
    */
-  const redirectTo = `${resolveAppOrigin()}/auth/callback?next=${encodeURIComponent("/auth/set-password")}`;
-
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo,
-    ...(params.fullName ? { data: { full_name: params.fullName } } : {}),
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: {
+      redirectTo: `${resolveAppOrigin()}/auth/callback`,
+      ...(params.fullName ? { data: { full_name: params.fullName } } : {}),
+    },
   });
 
-  if (error || !data?.user) {
+  const hashedToken = hashedTokenFrom(data);
+
+  if (error || !data?.user || !hashedToken) {
     /*
-     * Meaningful to an operator without leaking anything. The common causes
-     * are a mail provider that is not configured and Supabase's own hourly
-     * limit on invitations, and both need saying rather than "failed".
+     * Meaningful to an operator without leaking anything. Passing Supabase's
+     * message through matters here: "email address is invalid" and "rate limit
+     * exceeded" need different responses, and "failed" prompts neither.
      */
     return {
       ok: false,
       reason: "invite_failed",
-      message: error?.message ?? "Supabase did not return a user for that invitation.",
+      message: error?.message ?? "Supabase did not return a usable invitation link.",
     };
   }
 
@@ -359,7 +498,13 @@ export async function inviteUser(params: {
     metadataJson: { targetEmail: email, role: params.role },
   });
 
-  return { ok: true, email, role: params.role, userId };
+  return {
+    ok: true,
+    email,
+    role: params.role,
+    userId,
+    link: callbackLink({ hashedToken, type: "invite", next: "/auth/set-password" }),
+  };
 }
 
 export type AuditLogListItem = {

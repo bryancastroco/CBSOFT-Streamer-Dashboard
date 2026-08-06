@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { Check, Copy, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   changeUserRoleAction,
   inviteUserAction,
+  sendPasswordLinkAction,
   setUserActiveAction,
   type RoleChangeState,
 } from "@/app/(app)/admin/users/actions";
@@ -16,6 +18,99 @@ import { Label } from "@/components/ui/label";
 import type { UserRole } from "@/lib/auth/roles";
 
 const initialState: RoleChangeState = { status: "idle", message: null };
+
+/**
+ * A sign-in link, shown once.
+ *
+ * Supabase stores only a hash of the token, so this really is the only moment
+ * it exists here — hence a field and a copy button rather than a toast that
+ * scrolls away. Somebody who closes it without copying generates another,
+ * which is cheap; discovering later that it is gone forever is not.
+ *
+ * Keyed on the link rather than a boolean `dismissed`, so a second link is
+ * inherently undismissed and no effect is needed to reset anything.
+ */
+function IssuedLink({ url, onDone }: { url: string; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast.success("Link copied.");
+    } catch {
+      // Refused in an insecure context or by a permission policy. The field is
+      // selectable, so the fallback is manual rather than nothing.
+      toast.error("Could not copy automatically. Select the link and copy it.");
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4">
+      <p className="text-sm font-medium">Send this link — it is shown once</p>
+      <p className="text-xs text-muted-foreground">
+        It takes them straight to a page where they choose their password. Nothing is emailed from
+        here, so deliver it however you normally reach them.
+      </p>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          readOnly
+          value={url}
+          className="font-mono text-xs"
+          onFocus={(event) => event.target.select()}
+        />
+        <Button type="button" variant="outline" size="sm" onClick={copy}>
+          {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+
+      <Button type="button" variant="ghost" size="sm" onClick={onDone}>
+        Done
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A fresh way in for an account that already exists.
+ *
+ * Covers an invitation that was never completed and a forgotten password with
+ * one button, because both end at the same screen and an admin should not have
+ * to diagnose which case they are looking at.
+ */
+export function PasswordLinkForm({ userId, email }: { userId: string; email: string }) {
+  const [state, formAction] = useActionState(sendPasswordLinkAction, initialState);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (state.status === "error" && state.message) toast.error(state.message);
+  }, [state]);
+
+  const link = state.status === "success" ? (state.link ?? null) : null;
+
+  return (
+    <div className="space-y-3">
+      <form action={formAction}>
+        <input type="hidden" name="userId" value={userId} />
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          aria-label={`Create a password link for ${email}`}
+        >
+          <KeyRound className="size-4" aria-hidden />
+          Password link
+        </Button>
+      </form>
+
+      {link && link !== dismissed ? (
+        <IssuedLink url={link} onDone={() => setDismissed(link)} />
+      ) : null}
+    </div>
+  );
+}
 
 function SubmitButton({ label, disabled }: { label: string; disabled: boolean }) {
   const { pending } = useFormStatus();
@@ -100,14 +195,20 @@ export function ActivationForm({
 }
 
 /**
- * Invite someone by email.
+ * Add someone, and get a link to send them.
  *
- * No password field, deliberately. Supabase mails a link and the invitee sets
- * their own credential, so this application never handles one.
+ * No password field, deliberately: the invitee sets their own credential
+ * through the link, so this application never handles one.
+ *
+ * Nothing is emailed. Supabase's own template ends in a URL fragment that never
+ * reaches a server, editing it requires a paid plan, and the free tier caps
+ * auth email at a handful an hour — so the admin delivers the link, which is
+ * what they were already doing for Page connections.
  */
 export function InviteForm() {
   const [state, formAction] = useActionState(inviteUserAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
+  const [dismissed, setDismissed] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.status === "success" && state.message) {
@@ -118,8 +219,15 @@ export function InviteForm() {
     if (state.status === "error" && state.message) toast.error(state.message);
   }, [state]);
 
+  const link = state.status === "success" ? (state.link ?? null) : null;
+
   return (
-    <form ref={formRef} action={formAction} className="grid gap-3 sm:grid-cols-[2fr_2fr_1fr_auto]">
+    <div className="space-y-4">
+      {link && link !== dismissed ? (
+        <IssuedLink url={link} onDone={() => setDismissed(link)} />
+      ) : null}
+
+      <form ref={formRef} action={formAction} className="grid gap-3 sm:grid-cols-[2fr_2fr_1fr_auto]">
       <div className="grid gap-1.5">
         <Label htmlFor="invite-email" className="text-xs text-muted-foreground">
           Email
@@ -157,8 +265,9 @@ export function InviteForm() {
       </div>
 
       <div className="flex items-end">
-        <SubmitButton label="Send invitation" disabled={false} />
+        <SubmitButton label="Create invitation link" disabled={false} />
       </div>
-    </form>
+      </form>
+    </div>
   );
 }

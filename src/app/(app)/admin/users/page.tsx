@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 
-import { ActivationForm, InviteForm, RoleForm } from "@/app/(app)/admin/users/role-form";
+import {
+  ActivationForm,
+  InviteForm,
+  PasswordLinkForm,
+  RoleForm,
+} from "@/app/(app)/admin/users/role-form";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,6 +123,14 @@ export default async function AdminUsersPage() {
                         active={user.deactivatedAt === null}
                         isSelf={user.id === currentUser.id}
                       />
+                      {/*
+                       * Offered for everyone except yourself — you are already
+                       * signed in, and the button would only ever be a way to
+                       * lock yourself out mid-session.
+                       */}
+                      {user.id === currentUser.id ? null : (
+                        <PasswordLinkForm userId={user.id} email={user.email} />
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
