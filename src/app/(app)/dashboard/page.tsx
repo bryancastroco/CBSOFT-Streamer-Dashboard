@@ -25,6 +25,7 @@ import {
   TokenHealth,
   UrgentIssues,
 } from "@/components/dashboard/sections";
+import { SyncAllButton } from "@/app/(app)/dashboard/sync-all-button";
 import { CommentOverviewPanel } from "@/components/dashboard/comment-overview";
 import { AggregateMetricGroups } from "@/components/metrics/metric-group";
 import { FilterBar } from "@/components/data/filter-bar";
@@ -52,6 +53,22 @@ import { listStreamerOptions } from "@/lib/repositories/streamers";
 import { getGameFilterView } from "@/lib/services/game-filter-view";
 
 export const metadata: Metadata = { title: "Dashboard" };
+
+/*
+ * Server Actions run inside this page's function, so this page's configuration
+ * governs the Sync all sweep — not any API route's.
+ *
+ * Without it the sweep inherits the platform default, which is shorter than a
+ * real sync takes. The failure is not a visible error: the function is killed
+ * mid-flight, the action never returns, the button spins forever, and the run
+ * it opened stays `processing` — holding the single-sweep lock until
+ * `reclaimAbandonedSweeps` releases it twenty minutes later. Every sweep in
+ * between, including the nightly cron, is refused.
+ *
+ * A literal, because Next resolves segment configuration by static analysis and
+ * rejects an imported binding.
+ */
+export const maxDuration = 300;
 
 /**
  * One reading across every comment the filters select.
@@ -396,11 +413,7 @@ export default async function DashboardPage({
            * they can never use is worse than an action that simply is not
            * offered.
            */
-          isAdmin ? (
-            <Button asChild size="sm">
-              <Link href="/admin/streamers">Sync all</Link>
-            </Button>
-          ) : undefined
+          isAdmin ? <SyncAllButton /> : undefined
         }
         secondaryAction={
           <Button asChild variant="outline" size="sm">
