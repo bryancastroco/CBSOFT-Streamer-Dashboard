@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lt } from "drizzle-orm";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -242,6 +242,39 @@ export async function recordError(id: string, message: string): Promise<void> {
     .update(pageConnections)
     .set({ lastError: message.slice(0, 500) })
     .where(eq(pageConnections.id, id));
+}
+
+/**
+ * Drop every parked credential whose hold has lapsed.
+ *
+ * `readUserToken` clears an expired one when somebody tries to use it, which
+ * covers the streamer who comes back. It does nothing for the streamer who does
+ * not — and that is the common case, because abandoning the flow is exactly why
+ * the token went stale. Left alone it sits in the table indefinitely.
+ *
+ * Nothing here is exploitable: the value is encrypted, and every read path
+ * refuses it on the timestamp before decrypting. But a credential kept past its
+ * purpose is a credential waiting to leak, and this is the maintenance that
+ * makes that claim true rather than aspirational.
+ *
+ * Returns the count so a sweep can log it — a number that climbs steadily is a
+ * signal that streamers are stalling at the Page-choice step.
+ */
+export async function clearExpiredUserTokens(): Promise<number> {
+  const db = getDb();
+
+  const cleared = await db
+    .update(pageConnections)
+    .set({ encryptedUserToken: null, userTokenExpiresAt: null })
+    .where(
+      and(
+        isNotNull(pageConnections.encryptedUserToken),
+        lt(pageConnections.userTokenExpiresAt, new Date()),
+      ),
+    )
+    .returning({ id: pageConnections.id });
+
+  return cleared.length;
 }
 
 /** Clear the parked credential — on success, on failure, and on revocation. */

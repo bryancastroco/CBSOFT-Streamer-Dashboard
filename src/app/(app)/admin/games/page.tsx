@@ -17,6 +17,17 @@ import { countUnattributedContent, listGames } from "@/lib/repositories/games";
 export const metadata: Metadata = { title: "Games" };
 export const dynamic = "force-dynamic";
 
+/*
+ * Saving a game re-resolves attribution across the whole archive — deliberately,
+ * because editing a hashtag has to re-file the posts that already mention it,
+ * so this call cannot use the `onlyMissing` shortcut the nightly sweep does.
+ *
+ * That is a scan of every post and video, and it grows with the roster. Fast at
+ * 1,600 posts; not obviously fast at thirty streamers' worth. Giving it room
+ * costs nothing when it finishes quickly.
+ */
+export const maxDuration = 120;
+
 /**
  * The games registry.
  *

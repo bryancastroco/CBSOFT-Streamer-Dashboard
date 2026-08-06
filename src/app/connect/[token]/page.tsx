@@ -34,6 +34,21 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+/*
+ * `connectPageAction` runs inside this page's function and makes three
+ * sequential Meta calls — list the Pages, validate the chosen token, and the
+ * Graph debug lookup inside that validation. On a slow Meta day the platform
+ * default is not enough room.
+ *
+ * The cost of being wrong is paid by the person least able to report it: a
+ * streamer outside the company, on a link they were asked to open once, seeing
+ * a crash with no explanation. Nothing would be recorded, and the admin would
+ * see only that they never finished.
+ *
+ * A literal, because Next resolves segment configuration by static analysis.
+ */
+export const maxDuration = 60;
+
 /** What each failure on the way back from Facebook should say. */
 const ERROR_MESSAGES: Record<string, string> = {
   denied: "The Facebook sign-in was cancelled. You can try again whenever you are ready.",

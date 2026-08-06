@@ -200,7 +200,12 @@ export function GamesManager({ games }: { games: GameRow[] }) {
                   : `${games.length} game${games.length === 1 ? "" : "s"}.`}
               </CardDescription>
             </div>
-            <Button size="sm" variant={adding ? "outline" : "default"} onClick={() => setAdding((open) => !open)}>
+            <Button
+              type="button"
+              size="sm"
+              variant={adding ? "outline" : "default"}
+              onClick={() => setAdding((open) => !open)}
+            >
               <Plus className="size-4" aria-hidden />
               {adding ? "Cancel" : "Add game"}
             </Button>
@@ -233,6 +238,7 @@ export function GamesManager({ games }: { games: GameRow[] }) {
                 </CardDescription>
               </div>
               <Button
+                type="button"
                 size="sm"
                 variant="outline"
                 onClick={() => setEditing((open) => (open === game.id ? null : game.id))}

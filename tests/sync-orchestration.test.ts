@@ -101,6 +101,37 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 
+/*
+ * The housekeeping a finished sweep does, stubbed.
+ *
+ * `resolveContentGames` and `clearExpiredUserTokens` are collaborators, not the
+ * subject: this file is about orchestration — that one streamer failing does
+ * not end the sweep, and that the parent run is always closed. Reaching for the
+ * `getDb` mock instead would mean teaching it Drizzle's `select` chain and
+ * making `update` table-aware, which is a lot of fiction in service of a
+ * question these tests are not asking.
+ *
+ * They are asserted on below, so stubbing them does not lose the coverage that
+ * a sweep actually calls them.
+ */
+const housekeeping = vi.hoisted(() => ({
+  resolveContentGames: vi.fn(async () => ({
+    postsUpdated: 0,
+    videosUpdated: 0,
+    unattributed: 0,
+    durationMs: 0,
+  })),
+  clearExpiredUserTokens: vi.fn(async () => 0),
+}));
+
+vi.mock("@/lib/services/resolve-games", () => ({
+  resolveContentGames: housekeeping.resolveContentGames,
+}));
+
+vi.mock("@/lib/repositories/page-connections", () => ({
+  clearExpiredUserTokens: housekeeping.clearExpiredUserTokens,
+}));
+
 const { runSyncAll } = await import("@/lib/services/sync-all");
 
 // ---------------------------------------------------------------------------
@@ -615,5 +646,71 @@ describe("a sweep larger than one function window", () => {
     expect(result.streamersSucceeded).toBe(1);
     expect(result.remaining).toBe(1);
     expect(result.finished).toBe(false);
+  });
+});
+
+/**
+ * The housekeeping a finished sweep is responsible for.
+ *
+ * Both of these were previously reachable only from an admin screen, so they
+ * ran when configuration changed and never when data did. Asserted here rather
+ * than only at the source level, because "the sweep calls it" is the property —
+ * a future refactor that moves the call into one caller and forgets the others
+ * would pass a grep and fail this.
+ */
+describe("a finished sweep files and tidies", () => {
+  beforeEach(() => {
+    housekeeping.resolveContentGames.mockClear();
+    housekeeping.clearExpiredUserTokens.mockClear();
+  });
+
+  it("attributes the content it just collected", async () => {
+    mocks.listSyncableStreamers.mockResolvedValue([streamer("CBS-A")]);
+
+    await runSyncAll({ syncRunId: "run-parent" });
+
+    expect(housekeeping.resolveContentGames).toHaveBeenCalledTimes(1);
+    // `onlyMissing`: the nightly question is "file tonight's content". The
+    // admin screen omits it because a changed hashtag must re-file rows that
+    // already have an answer.
+    expect(housekeeping.resolveContentGames).toHaveBeenCalledWith({ onlyMissing: true });
+  });
+
+  it("drops connect credentials whose hold has lapsed", async () => {
+    mocks.listSyncableStreamers.mockResolvedValue([streamer("CBS-A")]);
+
+    await runSyncAll({ syncRunId: "run-parent" });
+
+    expect(housekeeping.clearExpiredUserTokens).toHaveBeenCalledTimes(1);
+  });
+
+  it("does neither until the last slice", async () => {
+    /*
+     * Attribution is a whole-roster pass. Running it per slice would repeat the
+     * same scan for no benefit — and on a sliced sweep the run is not finished,
+     * so there is nothing to tidy up after yet.
+     */
+    mocks.listSyncableStreamers.mockResolvedValue([streamer("CBS-A"), streamer("CBS-B")]);
+
+    const result = await runSyncAll({ syncRunId: "run-parent", options: { maxStreamers: 1 } });
+
+    expect(result.finished).toBe(false);
+    expect(result.remaining).toBe(1);
+    expect(housekeeping.resolveContentGames).not.toHaveBeenCalled();
+    expect(housekeeping.clearExpiredUserTokens).not.toHaveBeenCalled();
+  });
+
+  it("still finishes the sweep when housekeeping throws", async () => {
+    // Content collected but unlabelled beats a sync reported as failed because
+    // a labelling pass did not run.
+    housekeeping.resolveContentGames.mockRejectedValueOnce(new Error("boom"));
+    housekeeping.clearExpiredUserTokens.mockRejectedValueOnce(new Error("boom"));
+
+    mocks.listSyncableStreamers.mockResolvedValue([streamer("CBS-A")]);
+
+    const result = await runSyncAll({ syncRunId: "run-parent" });
+
+    expect(result.finished).toBe(true);
+    expect(result.status).not.toBe("failed");
   });
 });

@@ -9,6 +9,7 @@ import { getServerEnv } from "@/config/env";
 import { getDb } from "@/lib/db";
 import { syncRuns } from "@/lib/db/schema";
 import { childLogger } from "@/lib/observability/logger";
+import { clearExpiredUserTokens } from "@/lib/repositories/page-connections";
 import { listRecentPostIdsForStreamer } from "@/lib/repositories/posts";
 import {
   extendStreamerToken,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/repositories/streamers";
 import { listRecentVideoIdsForStreamer } from "@/lib/repositories/videos";
 import { rollUpMetrics } from "@/lib/services/metric-rollup";
+import { resolveContentGames } from "@/lib/services/resolve-games";
 import { syncContentComments } from "@/lib/services/sync-comments";
 import { syncPageMetrics } from "@/lib/services/sync-page-metrics";
 import { syncStreamerPosts } from "@/lib/services/sync-posts";
@@ -448,6 +450,80 @@ export async function runSyncAll(params: {
     });
 
     return buildResult(params.syncRunId, status, startedAt, totals, results, remaining);
+  }
+
+  /*
+   * File the newly collected content under a game.
+   *
+   * ## The bug this closes
+   *
+   * `resolveContentGames` was reachable only from the games admin screen, so
+   * attribution happened when a *game* changed and never when *content* did.
+   * Every night's new posts arrived with `game_id` null and stayed that way
+   * until somebody happened to edit a hashtag — at which point months of
+   * backlog would be filed at once.
+   *
+   * Nothing about that looks broken from the outside. The games screen shows
+   * healthy counts, the filter returns rows, and the only symptom is that the
+   * most recent content — the content anyone actually looks at — is missing
+   * from it. A filter that is quietly a few days stale is worse than one that
+   * is obviously empty.
+   *
+   * `onlyMissing` because the nightly question is narrow: file what was
+   * collected tonight. The module already carried this flag for exactly this
+   * caller — it was written for a sync path that was never wired up. Without
+   * it the pass reconsiders every row in the archive on every sweep, which is
+   * right when a *hashtag* changes (the admin screen's call, which omits it)
+   * and pure waste when only *content* has.
+   *
+   * Safe on every sweep either way: the pass no-ops entirely when no game is
+   * configured, writes only rows whose attribution actually changed, and is
+   * idempotent, so a resumed run repeating it costs nothing.
+   *
+   * Placed after the last slice rather than inside each one — attribution is a
+   * whole-roster pass, and running it per slice would repeat the same scan for
+   * no benefit. Failure here is logged and swallowed: content that is collected
+   * but unattributed is a far better outcome than a sweep reported as failed
+   * because a labelling pass did not run.
+   */
+  try {
+    const attributed = await resolveContentGames({ onlyMissing: true });
+
+    if (attributed.postsUpdated > 0 || attributed.videosUpdated > 0) {
+      log.info("sync.all.games_resolved", {
+        postsUpdated: attributed.postsUpdated,
+        videosUpdated: attributed.videosUpdated,
+      });
+    }
+  } catch (error) {
+    log.warn("sync.all.games_resolve_failed", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
+
+  /*
+   * Housekeeping for abandoned Page connections.
+   *
+   * A streamer who signs in with Facebook and then closes the tab leaves an
+   * encrypted user token behind. `readUserToken` drops an expired one when
+   * somebody tries to use it, which covers the streamer who returns — and does
+   * nothing for the one who does not, which is the common case, because
+   * abandoning the flow is precisely why it went stale.
+   *
+   * The sweep is the right place: it already runs nightly and this is the only
+   * recurring maintenance path the product has. Swallowed on failure for the
+   * same reason as above — tidying must never be able to fail a sync.
+   */
+  try {
+    const cleared = await clearExpiredUserTokens();
+
+    // Logged only when it did something, but worth watching: a number that
+    // climbs steadily means streamers are stalling at the Page-choice step.
+    if (cleared > 0) log.info("sync.all.expired_connect_tokens_cleared", { cleared });
+  } catch (error) {
+    log.warn("sync.all.connect_cleanup_failed", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
   }
 
   await closeRun(params.syncRunId, status, summary, totals, { streamers: results });

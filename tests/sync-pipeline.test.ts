@@ -69,3 +69,53 @@ describe("the dashboard can sweep every streamer", () => {
     expect(source).toContain("result.remaining");
   });
 });
+
+/**
+ * What a completed sweep does beyond collecting content.
+ *
+ * Both of these were reachable only from an admin screen, which meant they ran
+ * when *configuration* changed and never when *data* did. Neither failure is
+ * visible: the screens look healthy and the symptom is silence.
+ */
+describe("a finished sweep tidies up after itself", () => {
+  const syncAll = () => readFile(path.join(process.cwd(), "src/lib/services/sync-all.ts"), "utf8");
+
+  it("files newly collected content under a game", async () => {
+    /*
+     * The bug: attribution was triggered by editing a game and by nothing else.
+     * Every night's posts arrived with `game_id` null and stayed that way until
+     * somebody happened to change a hashtag, at which point months of backlog
+     * would be filed at once. The games screen showed healthy counts throughout,
+     * and the only symptom was that the newest content — the content people
+     * actually look at — was missing from the filter.
+     */
+    const source = await syncAll();
+
+    expect(source).toContain("resolveContentGames");
+    // `onlyMissing`, because the nightly question is "file tonight's content".
+    // The admin screen deliberately omits it: a changed hashtag has to re-file
+    // rows that already have an answer.
+    expect(source).toMatch(/resolveContentGames\(\{\s*onlyMissing:\s*true\s*\}\)/);
+  });
+
+  it("drops connect credentials whose hold has lapsed", async () => {
+    /*
+     * A streamer who signs in and then closes the tab leaves an encrypted user
+     * token behind. It was cleared only when somebody tried to use it — which
+     * never happens for the person who abandoned the flow, and abandoning is
+     * exactly why it went stale.
+     */
+    const source = await syncAll();
+
+    expect(source).toContain("clearExpiredUserTokens");
+  });
+
+  it("never lets either failure fail the sweep", async () => {
+    // Content collected but unlabelled beats a sync reported as failed because
+    // a housekeeping pass did not run.
+    const source = await syncAll();
+
+    expect(source).toContain("sync.all.games_resolve_failed");
+    expect(source).toContain("sync.all.connect_cleanup_failed");
+  });
+});
