@@ -18,11 +18,24 @@ src/lib/filters/browse.ts   the combined resolver + the href builder
 `sort`, `dir` and `offset` out of the query string. `buildBrowseHref` writes them back, changing
 only what it is given.
 
-**`gameId` has three states, not two.** Absent means every game; a uuid means that game; the
-reserved value `none` (`UNFILED_GAME`) means content attributed to no game at all. The third is a
-real selection — once games are configured, unattributed content is the category an admin needs to
-list in order to find the gap — so it resolves to `is null`, via the single `gameClause` helper in
-`src/lib/db/game-filter.ts`. The sentinel is not a uuid, so it cannot collide with a real id.
+**`gameId` has four states, and only one of them names a game.**
+
+| Value | Means | Predicate |
+|---|---|---|
+| absent | no filter — all content, filed or not | none |
+| `any` (`ANY_GAME`) | anything under a registered game | `game_id is not null` |
+| a uuid | that one game | `game_id = $1` |
+| `none` (`UNFILED_GAME`) | anything under no registered game | `game_id is null` |
+
+All four render through the single `gameClause` helper in `src/lib/db/game-filter.ts`. Neither
+sentinel is a uuid, so neither can collide with a real id, and `any` / `none` partition the content
+between them.
+
+**Absent is deliberately not the same as `any`.** Collapsing them — making the unfiltered default
+mean "any registered game" — would drop every unattributed post from every screen the moment a
+first game is registered. On the current data that is 1,617 rows out of 1,624, with nothing about
+it that looks like an error. The filter bar therefore offers *All content* (absent) above *All
+games* (`any`) rather than merging the two.
 
 Nothing else constructs a URL. Every sort header, page button, filter control, tab link and export
 link routes through `buildBrowseHref`, which is what makes it impossible for one control to drop a

@@ -13,8 +13,11 @@ import { Badge } from "@/components/ui/badge";
  * distinction is what someone debugging their configuration is looking for.
  *
  * Renders nothing at all when no game is registered yet (`show` false), and an
- * explicit "No game" when games exist but this item matched none. The second is
- * a finding; the first is noise.
+ * explicit "Not registered" when games exist but this item matched none. The
+ * second is a finding; the first is noise.
+ *
+ * The wording matches the filter's own entry — "Not registered games" — because
+ * a badge and the control that selects it must be recognisably the same thing.
  */
 export function GameBadge({
   name,
@@ -30,7 +33,7 @@ export function GameBadge({
   if (!name) {
     return (
       <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
-        No game
+        Not registered
       </Badge>
     );
   }

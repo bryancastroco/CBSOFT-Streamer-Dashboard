@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { UNFILED_GAME, buildBrowseHref, resolveBrowseQuery } from "@/lib/filters/browse";
+import { ANY_GAME, UNFILED_GAME, buildBrowseHref, resolveBrowseQuery } from "@/lib/filters/browse";
 import {
   DEFAULT_PERIOD,
   PERIOD_PRESETS,
@@ -297,10 +297,10 @@ describe("browse query", () => {
   });
 
   /*
-   * The game filter has three states and the third is the one worth pinning.
-   * `undefined` and `UNFILED_GAME` mean opposite things — "every game" and "no
-   * game at all" — and a resolver that collapsed the sentinel back to undefined
-   * would answer the first question when the reader asked the second.
+   * The game filter has four states and three of them are not a game id.
+   * `undefined` and `ANY_GAME` are the pair most easily conflated, and doing so
+   * is the expensive mistake: the default would start meaning "only registered
+   * games" and every screen would drop its unattributed content silently.
    */
   describe("the game filter", () => {
     it("reads a game id", () => {
@@ -309,20 +309,30 @@ describe("browse query", () => {
       );
     });
 
-    it("keeps the unfiled sentinel, which is a selection and not an absence", () => {
+    it("keeps both set-valued sentinels, which are selections and not absences", () => {
+      expect(resolve({ gameId: ANY_GAME }).gameId).toBe(ANY_GAME);
       expect(resolve({ gameId: UNFILED_GAME }).gameId).toBe(UNFILED_GAME);
     });
 
-    it("drops anything that is neither", () => {
-      expect(resolve({ gameId: "not-a-uuid" }).gameId).toBeUndefined();
+    it("keeps no filter distinct from every registered game", () => {
+      // The whole reason the default entry exists. If these collapsed, landing
+      // on /posts would hide everything the catalogue does not reach.
       expect(resolve({}).gameId).toBeUndefined();
+      expect(resolve({}).gameId).not.toBe(ANY_GAME);
+    });
+
+    it("drops anything that is none of them", () => {
+      expect(resolve({ gameId: "not-a-uuid" }).gameId).toBeUndefined();
+      expect(resolve({ gameId: "all" }).gameId).toBeUndefined();
     });
 
     it("cannot collide with a real id", () => {
-      // The sentinel is not a uuid, so no game can ever be named `none`.
-      expect(UNFILED_GAME).not.toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      );
+      // Neither sentinel is a uuid, so no game can ever be named `any` or `none`.
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      expect(ANY_GAME).not.toMatch(uuid);
+      expect(UNFILED_GAME).not.toMatch(uuid);
+      expect(ANY_GAME).not.toBe(UNFILED_GAME);
     });
   });
 });

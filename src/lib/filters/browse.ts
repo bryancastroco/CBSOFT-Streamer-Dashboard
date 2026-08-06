@@ -38,23 +38,35 @@ function first(value: string | string[] | undefined): string | undefined {
  * length-capped because it becomes an `ILIKE '%…%'` pattern.
  */
 /**
- * The sentinel for "attributed to no game at all".
+ * The two set-valued selections, alongside "a specific game".
  *
- * A third state, not the absence of a filter. Once games are configured,
- * unattributed content is a real and actionable category — a post with no
- * hashtag by a streamer with no primary game — and it is precisely what an
- * admin needs to list in order to find the gap in the configuration. Expressing
- * it as a reserved value keeps the whole filter one parameter rather than two
- * that can contradict each other.
+ * The filter has four states, and only two of them name a single game:
  *
- * Not a uuid, so it can never collide with a real game id.
+ *   undefined     every piece of content, filed or not — no filter
+ *   ANY_GAME      anything attributed to a registered game
+ *   a uuid        that one game
+ *   UNFILED_GAME  anything attributed to nothing
+ *
+ * `ANY_GAME` and `UNFILED_GAME` partition the content between them, which is
+ * what makes the pair worth having: "how is the registered catalogue doing"
+ * and "what is still falling outside it" are the two questions an operator
+ * actually asks, and neither is answerable by listing games one at a time.
+ *
+ * `undefined` is kept distinct from `ANY_GAME` deliberately. Collapsing them —
+ * making the default mean "any registered game" — would hide every unattributed
+ * post the moment a first game is registered, which on this data set is 1,617 of
+ * 1,624. A page that silently drops 99% of its rows on load is the worst
+ * failure this product can have, because nothing about it looks like an error.
+ *
+ * Neither sentinel is a uuid, so neither can collide with a real game id.
  */
+export const ANY_GAME = "any";
 export const UNFILED_GAME = "none";
 
 const primitivesSchema = z.object({
   streamerId: z.uuid().optional().catch(undefined),
   gameId: z
-    .union([z.uuid(), z.literal(UNFILED_GAME)])
+    .union([z.uuid(), z.literal(ANY_GAME), z.literal(UNFILED_GAME)])
     .optional()
     .catch(undefined),
   search: z.string().trim().min(1).max(200).optional().catch(undefined),
@@ -74,7 +86,8 @@ export type BrowseQuery<K extends string> = {
    * renamed, and a filter that survives a rename is the one keyed on identity.
    * The slug stays a display and lookup concern.
    *
-   * `UNFILED_GAME` selects content attributed to nothing.
+   * `ANY_GAME` selects everything filed under a registered game;
+   * `UNFILED_GAME` selects everything filed under none.
    */
   gameId: string | undefined;
   search: string | undefined;

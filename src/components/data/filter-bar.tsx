@@ -7,7 +7,7 @@ import { Loader2, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UNFILED_GAME, buildBrowseHref, type BrowseQuery } from "@/lib/filters/browse";
+import { ANY_GAME, UNFILED_GAME, buildBrowseHref, type BrowseQuery } from "@/lib/filters/browse";
 import {
   CONTENT_SCOPES,
   CONTENT_SCOPE_LABELS,
@@ -227,19 +227,29 @@ export function FilterBar<K extends string>({
               value={query.gameId ?? ""}
               onChange={(event) => go({ gameId: event.target.value || null })}
             >
-              <option value="">All games</option>
+              {/*
+               * Four entries, and the order is the argument.
+               *
+               * "All content" is the unfiltered default and sits first because
+               * that is what the page shows on load. It is deliberately NOT the
+               * same as "All games": once a game is registered, making the
+               * default mean "any registered game" would drop every
+               * unattributed post from every screen without a word — on the
+               * current data, 1,617 rows out of 1,624.
+               *
+               * "All games" and "Not registered games" then partition
+               * everything between them. Those are the two questions worth
+               * asking of a catalogue: how is what I have registered doing, and
+               * what is still falling outside it.
+               */}
+              <option value="">All content</option>
+              <option value={ANY_GAME}>All games</option>
               {games.map((game) => (
                 <option key={game.id} value={game.id}>
                   {game.name}
                 </option>
               ))}
-              {/*
-               * A deliberate third state. Once games exist, content with no
-               * attribution is a real category — a post with no hashtag by a
-               * streamer with no primary game — and it is the category an admin
-               * needs to find in order to fix the configuration.
-               */}
-              <option value={UNFILED_GAME}>Not filed under a game</option>
+              <option value={UNFILED_GAME}>Not registered games</option>
             </select>
           </div>
         ) : null}

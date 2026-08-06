@@ -45,12 +45,13 @@ async function Registry() {
           <CardHeader>
             <CardTitle className="text-base">
               {unattributed.toLocaleString("en-GB")} item
-              {unattributed === 1 ? "" : "s"} filed under no game
+              {unattributed === 1 ? "" : "s"} under no registered game
             </CardTitle>
             <CardDescription>
               Posts and videos with no matching hashtag, published by a streamer with no primary
               game. They still appear everywhere they did before — they simply cannot be reached by
-              a game filter. Setting a primary game on those streamers is usually the fastest fix.
+              a game filter, and the Game control lists them as &ldquo;Not registered
+              games&rdquo;. Setting a primary game on those streamers is usually the fastest fix.
             </CardDescription>
           </CardHeader>
           <CardContent>

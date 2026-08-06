@@ -40,7 +40,7 @@ vi.mock("@/lib/db", () => ({
 const { resolveContentGames } = await import("@/lib/services/resolve-games");
 const { listPosts } = await import("@/lib/repositories/posts");
 const { getStreamerOverview } = await import("@/lib/repositories/metrics");
-const { UNFILED_GAME } = await import("@/lib/filters/browse");
+const { ANY_GAME, UNFILED_GAME } = await import("@/lib/filters/browse");
 
 let client: PGlite;
 let streamerId: string;
@@ -377,11 +377,12 @@ describe("the database's own guarantees", () => {
  * The filter, against a real Postgres.
  *
  * `gameClause` is three lines and one of them is the interesting one. A
- * selection of "no game" has to become `is null`; comparing against the
- * sentinel string would either error or, worse, match nothing and read as an
- * empty result rather than a broken filter. The other two cases are here so
- * that the three are pinned together — the bug this guards against is one of
- * them silently behaving like another.
+ * selection of "no game" has to become `is null` and "every registered game"
+ * `is not null`; compared against the sentinel string either would error, or
+ * worse match nothing and read as an empty result rather than a broken filter.
+ * All four cases are pinned together, because the bug this guards against is
+ * one of them silently behaving like another — and the pair most likely to
+ * collapse, "no filter" and "any game", differ by 1,617 rows on real data.
  */
 describe("filtering by game", () => {
   beforeEach(async () => {
@@ -418,8 +419,24 @@ describe("filtering by game", () => {
     expect(await codes(UNFILED_GAME)).toEqual(["filter-plain"]);
   });
 
+  it("selects every registered game together, excluding the rest", async () => {
+    expect(await codes(ANY_GAME)).toEqual(["filter-other", "filter-tagged"]);
+  });
+
   it("selects everything when no game is given", async () => {
     expect(await codes(undefined)).toEqual(["filter-other", "filter-plain", "filter-tagged"]);
+  });
+
+  it("keeps no filter and every-registered-game apart", async () => {
+    // The two read alike in a dropdown and are not the same set. Conflating
+    // them is how a default silently stops showing unattributed content.
+    const everything = await codes(undefined);
+    const registered = await codes(ANY_GAME);
+    const unregistered = await codes(UNFILED_GAME);
+
+    expect(registered).not.toEqual(everything);
+    // And the two halves partition the whole, with nothing lost between them.
+    expect([...registered, ...unregistered].sort()).toEqual(everything);
   });
 
   it("reports the game and how it was decided on each row", async () => {
