@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,6 +15,17 @@ import {
   userTokenHoldExpiry,
 } from "@/lib/connect/invitations";
 import { resolveRouteAccess } from "@/lib/auth/route-policy";
+
+/**
+ * Source with comments stripped.
+ *
+ * The assertions below are about what the code *does*, and the prose beside it
+ * names exactly what it must not do — that explanation is most of the value, so
+ * matching the raw file would fail on the reasoning rather than the behaviour.
+ */
+function code(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
 
 /**
  * The invitation link, and what it is allowed to do.
@@ -157,5 +171,65 @@ describe("the public connect surface", () => {
     expect(resolveRouteAccess("/admin/connections")).toBe("admin");
     expect(resolveRouteAccess("/dashboard")).toBe("authenticated");
     expect(resolveRouteAccess("/connections")).toBe("authenticated");
+  });
+});
+
+/**
+ * The button that starts the Facebook sign-in.
+ *
+ * ## The failure this guards against
+ *
+ * It disabled itself from the button's `onClick`. React flushes state from a
+ * click synchronously, so the submitter became `disabled` before the browser
+ * reached the click's default action — and a disabled submitter cancels form
+ * submission. The request was never made.
+ *
+ * Nothing threw. The label changed to "Opening Facebook…" and stayed there,
+ * which reads as a slow network, or Facebook being down, or a CSP still
+ * misconfigured — every explanation except the real one. The only proof was
+ * server-side: `opened_at` still null on the invitation, because the route that
+ * writes it never ran.
+ *
+ * A source assertion rather than a rendered test, because reproducing it needs
+ * a real browser performing a real form submission — jsdom does not implement
+ * navigation, so a DOM test would pass against the broken version.
+ */
+describe("the connect button submits its form", () => {
+  it("never disables the submitter before the browser can act on it", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/app/connect/[token]/page-picker.tsx"),
+      "utf8",
+    );
+
+    const bare = code(source);
+    const start = bare.indexOf("export function ConnectButton");
+    const end = bare.indexOf("function Submit(");
+    const button = bare.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    // `useFormStatus` reports pending only once submission is under way, so the
+    // other forms in this codebase can disable safely. This one cannot: its
+    // pending state comes from the click itself.
+    expect(button).not.toMatch(/disabled=\{[^}]*pending/);
+    expect(button).not.toContain("onClick");
+  });
+
+  it("marks itself busy from the submit event, which cannot be cancelled", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/app/connect/[token]/page-picker.tsx"),
+      "utf8",
+    );
+
+    const button = source.slice(
+      source.indexOf("export function ConnectButton"),
+      source.indexOf("function Submit("),
+    );
+
+    expect(button).toContain("onSubmit");
+    // Pointer-events, not `disabled`: it guards a double click without being
+    // able to interfere with a submission already in flight.
+    expect(button).toContain("pointer-events-none");
   });
 });

@@ -7,6 +7,7 @@ import { CheckCircle2, LogIn } from "lucide-react";
 import { connectPageAction } from "@/app/connect/[token]/actions";
 import { Button } from "@/components/ui/button";
 import { idleState } from "@/lib/forms/action-state";
+import { cn } from "@/lib/utils";
 
 /**
  * The two things a streamer ever touches.
@@ -19,11 +20,40 @@ export function ConnectButton({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
 
   return (
-    // A real form POST to a Route Handler, which 302s to Facebook. Not a fetch:
+    // A real form POST to a Route Handler, which 303s to Facebook. Not a fetch:
     // the browser has to *navigate* to Facebook, and not a link, because
     // starting the flow sets a CSRF cookie and is a state change.
-    <form action={`/api/connect/${encodeURIComponent(token)}/start`} method="post">
-      <Button type="submit" size="lg" className="w-full" disabled={pending} onClick={() => setPending(true)}>
+    <form
+      action={`/api/connect/${encodeURIComponent(token)}/start`}
+      method="post"
+      /*
+       * The pending flag is set here, on submit — NOT in the button's onClick.
+       *
+       * This looked like a style choice and was a total failure. React flushes
+       * state from a click synchronously, so `onClick` → `setPending(true)`
+       * re-rendered the button as `disabled` *before* the browser reached the
+       * click's default action. A disabled submitter cancels form submission,
+       * so the request was never made.
+       *
+       * The symptom was the cruellest possible one: the label changed to
+       * "Opening Facebook…" and stayed there. It looked like a slow network, or
+       * like Facebook was down, or like the CSP was still wrong. The only proof
+       * was server-side — `opened_at` still null on the invitation, because the
+       * route that sets it never ran.
+       *
+       * `onSubmit` fires as part of the submission that is already under way,
+       * so nothing can cancel it.
+       */
+      onSubmit={() => setPending(true)}
+    >
+      <Button
+        type="submit"
+        size="lg"
+        // Never `disabled`. Pointer-events guards the double click instead, and
+        // cannot interfere with a submission the browser has already begun.
+        className={cn("w-full", pending && "pointer-events-none opacity-90")}
+        aria-busy={pending}
+      >
         <LogIn className="size-5" aria-hidden />
         {pending ? "Opening Facebook…" : "Continue with Facebook"}
       </Button>
