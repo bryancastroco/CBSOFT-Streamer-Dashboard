@@ -37,6 +37,14 @@ first game is registered. On the current data that is 1,617 rows out of 1,624, w
 it that looks like an error. The filter bar therefore offers *All content* (absent) above *All
 games* (`any`) rather than merging the two.
 
+**`none` is resolvable but not offered.** The filter bar lists *All content*, *All games* and each
+game; it does not list *Not registered games*, because that answers a configuration question rather
+than a reading one, and on a roster mid-setup it is most of the archive. Admin → Games links to it
+beside the count that makes it worth opening. The option does render when it is the *current*
+selection — a `<select>` whose value matches no option shows a blank or the wrong one, which is a
+control lying about the rows beneath it. Resolution is unchanged either way: `resolveBrowseQuery`
+accepts `none` from any source, since the rows behind it are ones the viewer can already see.
+
 Nothing else constructs a URL. Every sort header, page button, filter control, tab link and export
 link routes through `buildBrowseHref`, which is what makes it impossible for one control to drop a
 filter another control had set — a bug that stays invisible until somebody exports the wrong rows.

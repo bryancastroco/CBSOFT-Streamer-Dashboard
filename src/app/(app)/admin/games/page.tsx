@@ -9,6 +9,7 @@ import { CardSkeleton } from "@/components/layout/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireAdmin } from "@/lib/auth/guards";
+import { UNFILED_GAME } from "@/lib/filters/browse";
 import { countUnattributedContent, listGames } from "@/lib/repositories/games";
 
 export const metadata: Metadata = { title: "Games" };
@@ -50,14 +51,28 @@ async function Registry() {
             <CardDescription>
               Posts and videos with no matching hashtag, published by a streamer with no primary
               game. They still appear everywhere they did before — they simply cannot be reached by
-              a game filter, and the Game control lists them as &ldquo;Not registered
-              games&rdquo;. Setting a primary game on those streamers is usually the fastest fix.
+              a game filter. Setting a primary game on those streamers is usually the fastest fix.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/posts?gameId=none">Show them</Link>
-            </Button>
+          <CardContent className="space-y-3">
+            {/*
+             * The only way into that view. The filter bar does not offer it —
+             * it answers a configuration question, not a reading one — so these
+             * links are the door, and they sit beside the count that gives
+             * someone a reason to open it.
+             */}
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/posts?gameId=${UNFILED_GAME}`}>Review the posts</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/videos?gameId=${UNFILED_GAME}`}>Review the videos</Link>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              These open the Game filter on a setting it does not otherwise offer. Clearing the
+              filter returns the screen to normal.
+            </p>
           </CardContent>
         </Card>
       ) : null}

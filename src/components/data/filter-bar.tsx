@@ -228,19 +228,12 @@ export function FilterBar<K extends string>({
               onChange={(event) => go({ gameId: event.target.value || null })}
             >
               {/*
-               * Four entries, and the order is the argument.
-               *
                * "All content" is the unfiltered default and sits first because
                * that is what the page shows on load. It is deliberately NOT the
                * same as "All games": once a game is registered, making the
                * default mean "any registered game" would drop every
                * unattributed post from every screen without a word — on the
                * current data, 1,617 rows out of 1,624.
-               *
-               * "All games" and "Not registered games" then partition
-               * everything between them. Those are the two questions worth
-               * asking of a catalogue: how is what I have registered doing, and
-               * what is still falling outside it.
                */}
               <option value="">All content</option>
               <option value={ANY_GAME}>All games</option>
@@ -249,7 +242,25 @@ export function FilterBar<K extends string>({
                   {game.name}
                 </option>
               ))}
-              <option value={UNFILED_GAME}>Not registered games</option>
+
+              {/*
+               * "Not registered games" is not offered here — it is a
+               * configuration view, not a reading view. A reader asking about
+               * Cabal Mobile has no use for the pile of content nobody has
+               * classified yet, and on a roster mid-setup that pile is most of
+               * the archive: an inviting entry that answers a question nobody
+               * asked. Admin → Games links to it, beside the count that makes
+               * it worth clicking.
+               *
+               * It still renders when it is the *current* selection, so an
+               * admin who arrived by that link sees where they are and can
+               * leave. A `<select>` whose value matches no option shows a blank
+               * or silently displays the wrong one — a control lying about the
+               * rows underneath it.
+               */}
+              {query.gameId === UNFILED_GAME ? (
+                <option value={UNFILED_GAME}>Not registered games</option>
+              ) : null}
             </select>
           </div>
         ) : null}

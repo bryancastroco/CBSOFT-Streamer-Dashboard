@@ -161,7 +161,7 @@ export type MetricPeriod = { from: Date | null; to: Date | null };
 
 export type MetricTotalsFilters = {
   streamerId?: string | undefined;
-  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  /** A game id, or `ANY_GAME` / `UNFILED_GAME`. See `gameClause`. */
   gameId?: string | undefined;
   period?: MetricPeriod | undefined;
   /** Restrict to posts or to videos. Omit for both. */

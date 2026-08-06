@@ -216,7 +216,7 @@ export async function upsertVideoInsights(params: {
 
 export type ListVideosFilters = {
   streamerId?: string | undefined;
-  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  /** A game id, or `ANY_GAME` / `UNFILED_GAME`. See `gameClause`. */
   gameId?: string | undefined;
   search?: string | undefined;
   from?: Date | null;

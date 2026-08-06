@@ -53,7 +53,7 @@ export type DashboardMetrics = {
 
 export type MetricsFilters = {
   streamerId?: string | undefined;
-  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  /** A game id, or `ANY_GAME` / `UNFILED_GAME`. See `gameClause`. */
   gameId?: string | undefined;
   from?: Date | null;
   to?: Date | null;
