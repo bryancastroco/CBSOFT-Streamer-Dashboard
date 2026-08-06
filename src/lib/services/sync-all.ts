@@ -20,6 +20,7 @@ import {
 import { listRecentVideoIdsForStreamer } from "@/lib/repositories/videos";
 import { rollUpMetrics } from "@/lib/services/metric-rollup";
 import { syncContentComments } from "@/lib/services/sync-comments";
+import { syncPageMetrics } from "@/lib/services/sync-page-metrics";
 import { syncStreamerPosts } from "@/lib/services/sync-posts";
 import { syncStreamerVideos } from "@/lib/services/sync-videos";
 
@@ -127,6 +128,10 @@ export type StreamerSweepResult = {
   summaries_generated: number;
   /** True when this sweep swapped the token for a longer-lived one. */
   token_extended: boolean;
+  /** Daily audience rows written or refreshed. */
+  follower_days_written: number;
+  /** Most recent follower count Meta reported, or null when it did not. */
+  followers: number | null;
   /** Content items whose canonical metrics were refreshed after the sync. */
   metrics_rolled_up: number;
   /** Sanitised. Never a raw Meta payload. */
@@ -386,6 +391,8 @@ export async function runSyncAll(params: {
         comments_processed: 0,
         summaries_generated: 0,
         token_extended: false,
+        follower_days_written: 0,
+        followers: null,
         metrics_rolled_up: 0,
         errors: [{ step: "streamer", message }],
       });
@@ -503,6 +510,8 @@ async function sweepStreamer(
     comments_processed: 0,
     summaries_generated: 0,
     token_extended: false,
+    follower_days_written: 0,
+    followers: null,
     metrics_rolled_up: 0,
     errors: [],
   };
@@ -587,6 +596,33 @@ async function sweepStreamer(
     maxPages: options.maxPages ?? SYNC_ALL_DEFAULTS.maxPages,
     concurrency: options.concurrency ?? SYNC_ALL_DEFAULTS.concurrency,
   };
+
+  /*
+   * ---- 3c. Audience size ---------------------------------------------------
+   *
+   * One Graph call covering thirty days, before the content sweep, because it
+   * is the cheapest thing here and the least likely to be cut short by a
+   * timeout — a run that dies halfway through posts should still have recorded
+   * today's follower count.
+   *
+   * Never fatal. Audience figures are a reporting nicety; content collection is
+   * the job, and failing a streamer over a growth metric would trade something
+   * valuable for something merely useful.
+   */
+  try {
+    const audience = await syncPageMetrics({ streamerId: streamer.id });
+
+    if (audience.ok) {
+      result.follower_days_written = audience.daysWritten;
+      result.followers = audience.latestFollowers;
+    } else {
+      fail("page_metrics", audience.message);
+      if (result.status === "completed") result.status = "completed_with_errors";
+    }
+  } catch (cause) {
+    fail("page_metrics", sanitiseThrown(cause, "Audience figures could not be collected."));
+    if (result.status === "completed") result.status = "completed_with_errors";
+  }
 
   // ---- 4 & 5. Posts and post insights -------------------------------------
   const posts = await syncStreamerPosts(shared);

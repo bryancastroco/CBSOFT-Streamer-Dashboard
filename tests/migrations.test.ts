@@ -42,6 +42,9 @@ describe("migrations apply cleanly", () => {
       "content_metric_snapshots",
       "content_metrics_current",
       "export_runs",
+      // Daily Page audience figures. `followers` is a running total,
+      // `new_follows` that day's arrivals — see migration 0016.
+      "page_metrics_daily",
       "post_insights",
       "posts",
       "streamers",

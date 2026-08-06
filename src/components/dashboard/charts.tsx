@@ -209,3 +209,61 @@ export function SentimentChart({ data }: { data: SentimentSlice[] }) {
     </ResponsiveContainer>
   );
 }
+
+/**
+ * Followers over time.
+ *
+ * A line rather than bars: the running total is a level, and bars imply a
+ * quantity added each day — which is what `newFollows` means and this is not.
+ *
+ * `domain={["dataMin", "dataMax"]}` because a Page with forty thousand
+ * followers gaining two hundred is a real week's work, and an axis anchored at
+ * zero renders that as a flat line. The trade-off is that a small change looks
+ * dramatic, which is why the card beside it states the actual number.
+ */
+export function FollowerChart({
+  data,
+}: {
+  data: { date: string; followers: number | null }[];
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
+        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="date" tickFormatter={shortDay} {...AXIS} minTickGap={24} />
+        <YAxis {...AXIS} width={56} domain={["dataMin", "dataMax"]} allowDecimals={false} />
+        <Tooltip {...TOOLTIP_STYLE} labelFormatter={(label) => shortDay(String(label))} />
+        <Line
+          type="monotone"
+          dataKey="followers"
+          name="Followers"
+          stroke="var(--chart-1)"
+          strokeWidth={2}
+          dot={false}
+          // A day Meta did not report leaves a gap rather than a line drawn
+          // straight through it, which would invent a measurement.
+          connectNulls={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** New follows per day. Bars, because each one is a quantity gained. */
+export function NewFollowsChart({
+  data,
+}: {
+  data: { date: string; newFollows: number | null }[];
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={160}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="date" tickFormatter={shortDay} {...AXIS} minTickGap={24} />
+        <YAxis {...AXIS} width={44} allowDecimals={false} />
+        <Tooltip {...TOOLTIP_STYLE} labelFormatter={(label) => shortDay(String(label))} />
+        <Bar dataKey="newFollows" name="New follows" fill="var(--chart-2)" radius={[3, 3, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}

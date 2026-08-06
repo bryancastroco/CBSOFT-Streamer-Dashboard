@@ -12,10 +12,24 @@ import { cn } from "@/lib/utils";
  * exact mistake `lib/meta/insight-display` exists to prevent, and the dashboard
  * is the loudest place to make it.
  */
-export type MetricTone = "default" | "warning" | "danger" | "muted";
+/**
+ * `success` exists because the set had no way to say "this is good news".
+ *
+ * Growth is the first metric here where up is unambiguously positive, and
+ * rendering it in the same neutral grey as everything else made a card that had
+ * something to report look like one that did not.
+ */
+export type MetricTone = "default" | "success" | "warning" | "danger" | "muted";
 
+/*
+ * The design tokens, not the Tailwind palette. `warning` and `danger` predate
+ * the tokens and are left as they are rather than restyled in passing — a
+ * visual change to every existing dashboard card does not belong in a commit
+ * about follower growth.
+ */
 const TONE_CLASSES: Record<MetricTone, string> = {
   default: "",
+  success: "border-success/30",
   warning: "border-amber-500/40",
   danger: "border-destructive/50",
   muted: "",
@@ -23,6 +37,7 @@ const TONE_CLASSES: Record<MetricTone, string> = {
 
 const VALUE_CLASSES: Record<MetricTone, string> = {
   default: "",
+  success: "text-success-foreground",
   warning: "text-amber-600 dark:text-amber-500",
   danger: "text-destructive",
   muted: "text-muted-foreground",

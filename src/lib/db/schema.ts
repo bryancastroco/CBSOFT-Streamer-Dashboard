@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   doublePrecision,
   type AnyPgColumn,
   index,
@@ -1008,5 +1009,48 @@ export const commentOverviewSummaries = pgTable(
   (table) => [
     uniqueIndex("comment_overview_source_hash_key").on(table.sourceHash),
     index("comment_overview_generated_at_idx").on(table.generatedAt.desc()),
+  ],
+);
+
+/**
+ * Daily Page audience figures, from Meta Page insights.
+ *
+ * `followers` is the running total on that day; `new_follows` is that day's
+ * gain. The second is not the difference of the first — unfollows are invisible
+ * to this edge, so a day with seven arrivals and three departures moves the
+ * total by four while `new_follows` says seven. Both are stored because they
+ * answer different questions, and deriving either from the other would be wrong.
+ *
+ * Probed before it was written: `page_follows`, `page_daily_follows` and
+ * `page_views_total` answer on v25; `page_fans`, `page_fan_adds` and
+ * `page_impressions` are rejected. See migration 0016.
+ */
+export const pageMetricsDaily = pgTable(
+  "page_metrics_daily",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    streamerId: uuid("streamer_id")
+      .notNull()
+      .references(() => streamers.id, { onDelete: "cascade" }),
+
+    /** The day these figures describe, UTC. Meta reports one value per day. */
+    metricDate: date("metric_date").notNull(),
+
+    followers: integer("followers"),
+    newFollows: integer("new_follows"),
+    pageViews: integer("page_views"),
+
+    /** The unmodified payload, so a later metric can be derived from history. */
+    rawJson: jsonb("raw_json").notNull().default({}),
+
+    collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Meta revises recent days, so a re-fetch updates in place.
+    uniqueIndex("page_metrics_daily_streamer_date_key").on(table.streamerId, table.metricDate),
+    index("page_metrics_daily_streamer_date_idx").on(table.streamerId, table.metricDate.desc()),
+    index("page_metrics_daily_date_idx").on(table.metricDate.desc()),
   ],
 );

@@ -21,6 +21,7 @@ import {
 import { TokenStatusBadge } from "@/components/admin/token-status-badge";
 import { CsvExportLink } from "@/components/data/csv-export-link";
 import { FilterBar } from "@/components/data/filter-bar";
+import { GrowthPanel } from "@/components/dashboard/growth";
 import { MetricCard, MetricGrid } from "@/components/data/metric-card";
 import { Pagination } from "@/components/data/pagination";
 import { EmptyState, MetricCardSkeleton, TableSkeleton } from "@/components/data/states";
@@ -53,6 +54,7 @@ import {
 import { EXPECTED_SCOPES } from "@/lib/meta/token-status";
 import { listCommentAnalyses } from "@/lib/repositories/analysis";
 import { getStreamerOverview, type MetricTotal } from "@/lib/repositories/metrics";
+import { getPageGrowth } from "@/lib/repositories/page-growth";
 import { listPosts } from "@/lib/repositories/posts";
 import {
   getStreamerById,
@@ -110,11 +112,19 @@ async function OverviewTab({ streamerId, params }: { streamerId: string; params:
     defaultSort: { key: "none", direction: "desc" },
   });
 
-  const overview = await getStreamerOverview({
-    streamerId,
-    from: query.period.from,
-    to: query.period.to,
-  });
+  const [overview, growth] = await Promise.all([
+    getStreamerOverview({
+      streamerId,
+      from: query.period.from,
+      to: query.period.to,
+    }),
+    /*
+     * Audience figures come from a different table on a different cadence —
+     * one row per day from Page insights, rather than per-post metrics — so
+     * they are fetched alongside rather than folded into the overview query.
+     */
+    getPageGrowth({ streamerId, from: query.period.from, to: query.period.to }),
+  ]);
 
   const reactions = totalCard(overview.reactions);
   const comments = totalCard(overview.comments);
@@ -163,6 +173,13 @@ async function OverviewTab({ streamerId, params }: { streamerId: string; params:
           hint={formatWhen(overview.latestVideoAt)}
         />
       </MetricGrid>
+
+      {/*
+       * Below the content figures, because it answers a different question.
+       * The grid above is "what did they publish"; this is "did the audience
+       * grow", which is the outcome that publishing is meant to produce.
+       */}
+      <GrowthPanel growth={growth} />
     </div>
   );
 }

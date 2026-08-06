@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   listRecentVideoIdsForStreamer: vi.fn(),
   recordAuditLogSafe: vi.fn(),
   rollUpMetrics: vi.fn(),
+  syncPageMetrics: vi.fn(),
   extendStreamerToken: vi.fn(),
   closedRuns: [] as { status: string; message: string | null; totals: unknown }[],
 }));
@@ -56,6 +57,13 @@ vi.mock("@/lib/repositories/videos", () => ({
 vi.mock("@/lib/services/sync-posts", () => ({ syncStreamerPosts: mocks.syncStreamerPosts }));
 vi.mock("@/lib/services/sync-videos", () => ({ syncStreamerVideos: mocks.syncStreamerVideos }));
 vi.mock("@/lib/services/sync-comments", () => ({ syncContentComments: mocks.syncContentComments }));
+/*
+ * Audience collection, stubbed for the same reason as the rollup below: it
+ * reaches for a Page token and a database, and an unstubbed failure would
+ * downgrade every streamer to `completed_with_errors` — which these tests would
+ * then report as a sweep bug rather than as a missing stub.
+ */
+vi.mock("@/lib/services/sync-page-metrics", () => ({ syncPageMetrics: mocks.syncPageMetrics }));
 /*
  * The sweep's final step per streamer is rolling that streamer's new insights
  * into canonical metrics. Stubbed because this suite is about orchestration —
@@ -172,6 +180,7 @@ beforeEach(() => {
   mocks.listRecentVideoIdsForStreamer.mockResolvedValue([]);
   mocks.recordAuditLogSafe.mockResolvedValue(undefined);
   mocks.rollUpMetrics.mockResolvedValue({ processed: 0, succeeded: 0, failed: 0 });
+  mocks.syncPageMetrics.mockResolvedValue({ ok: true, daysWritten: 30, latestFollowers: 40_112 });
   /*
    * The sweep renews each token while it still works. Stubbed as a no-op:
    * unstubbed it is undefined, the call throws, and the sweep quietly runs its
