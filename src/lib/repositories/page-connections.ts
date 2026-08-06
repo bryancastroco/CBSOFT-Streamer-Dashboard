@@ -1,6 +1,6 @@
 import "server-only";
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -156,10 +156,16 @@ export async function findInvitationByToken(token: string): Promise<InvitationBy
 }
 
 /**
- * Note that the streamer arrived.
+ * Note that the streamer started the sign-in.
  *
- * Only ever `pending` → `opened`: a connected or revoked invitation must not be
- * dragged back to an earlier state by someone reloading an old tab.
+ * Recorded when they press the button rather than when the page loads: "opened
+ * my link" is a weaker signal than "tried", and a link preview unfurling in a
+ * chat client would fire the first without a person being involved.
+ *
+ * The `status` guard is load-bearing rather than decorative. Callers check
+ * `isUsable` first, so a connected invitation should never arrive here — but
+ * "should never" is how a completed connection ends up displayed as unfinished
+ * after somebody reloads an old tab, and the guard costs one clause.
  */
 export async function markOpened(id: string): Promise<void> {
   const db = getDb();
@@ -167,7 +173,7 @@ export async function markOpened(id: string): Promise<void> {
   await db
     .update(pageConnections)
     .set({ status: "opened", openedAt: new Date() })
-    .where(eq(pageConnections.id, id));
+    .where(and(eq(pageConnections.id, id), inArray(pageConnections.status, ["pending", "opened"])));
 }
 
 /** Park the user token between the callback and the Page choice. */

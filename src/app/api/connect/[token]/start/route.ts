@@ -18,10 +18,11 @@ export const dynamic = "force-dynamic";
  * it mints a CSRF token and sets a cookie. A GET would also let any image tag
  * or link preview on the page kick the flow off.
  *
- * The redirect to Facebook is a 303, not a form target. `form-action 'self'` in
- * the CSP would refuse a form posting straight to facebook.com — correctly, since
- * that is exactly the shape of an exfiltration. A redirect is a navigation and
- * is not governed by it.
+ * The redirect to Facebook is a 303. Note that this does NOT escape
+ * `form-action`: Chrome applies the directive to the redirect *target* of a
+ * form submission, not just to the immediate action, so the CSP has to name
+ * facebook.com explicitly — see `lib/security/headers.ts`. Getting this wrong
+ * fails silently, with the button appearing to do nothing.
  */
 export async function POST(
   _request: Request,

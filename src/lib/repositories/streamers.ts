@@ -1148,20 +1148,30 @@ export type SyncRunRow = Awaited<ReturnType<typeof listSyncRunsForStreamer>>[num
 /**
  * Store a Page token obtained by the streamer themselves.
  *
- * Lives here rather than in the connect service for one reason:
- * `encrypted_page_token` is confined to this file, and
+ * Lives here rather than in the connect service for one reason: the Page-token
+ * ciphertext column is confined to this file, and
  * `tests/token-containment.test.ts` fails the build if it is written anywhere
  * else. That confinement is worth more than the convenience of putting this
- * beside the OAuth code — a Page token has exactly one place it can be stored,
- * and reviewing that place is reviewing all of them.
+ * beside the OAuth code — there is one place to review for how a Page token is
+ * ever stored, whether an admin pasted it or a streamer granted it.
  *
- * Creates the streamer when the invitation was not tied to one, updates it when
- * it was. Validation happens in the caller, which already holds the plaintext
- * from Meta; the verdict arrives here as a decided fact.
+ * ## The two ways this can be asked to do the wrong thing
  *
- * The audit entry carries a null user. The streamer is not a dashboard account,
- * and attributing this to whichever admin sent the link would record something
- * that did not happen.
+ * `page_id` is unique among live streamers, so both of these are real states
+ * the database would otherwise reject with an unhandled constraint violation —
+ * which reaches the streamer as a crashed page and records nothing.
+ *
+ *  1. **The Page is already on the roster.** Common: an admin sends a link to
+ *     somebody whose Page was added manually months ago, and forgets to tick
+ *     "attach to existing streamer". The right answer is to update that
+ *     streamer, not to create a second row for the same Page.
+ *
+ *  2. **The invitation names a streamer, but they chose a different Page.**
+ *     Refused. Storing Page Y's token on a streamer whose `page_id` is X would
+ *     pass here and then fail every later validation, because validation
+ *     compares the token against the stored Page id — a silent breakage
+ *     surfacing days later as "token invalid" with no explanation. Repointing
+ *     the streamer instead would orphan every post already collected under X.
  */
 export async function attachConnectedPageToken(params: {
   streamerId: string | null;
@@ -1170,7 +1180,7 @@ export async function attachConnectedPageToken(params: {
   pageName: string;
   token: string;
   validation: TokenValidation;
-}): Promise<string> {
+}): Promise<{ ok: true; streamerId: string } | { ok: false; message: string }> {
   const db = getDb();
 
   const encrypted = encryptToken(params.token);
@@ -1187,21 +1197,57 @@ export async function attachConnectedPageToken(params: {
   };
 
   return db.transaction(async (tx) => {
-    let id = params.streamerId;
+    // Live rows only: the unique index is partial on `deleted_at is null`, so a
+    // soft-deleted streamer does not block reconnecting the same Page.
+    const [byPage] = await tx
+      .select({ id: streamers.id, name: streamers.streamerName })
+      .from(streamers)
+      .where(and(eq(streamers.pageId, params.pageId), isNull(streamers.deletedAt)))
+      .limit(1);
 
-    if (id) {
+    let id: string;
+
+    if (params.streamerId) {
+      const [target] = await tx
+        .select({ id: streamers.id, pageId: streamers.pageId, name: streamers.streamerName })
+        .from(streamers)
+        .where(and(eq(streamers.id, params.streamerId), isNull(streamers.deletedAt)))
+        .limit(1);
+
+      if (!target) {
+        return { ok: false as const, message: "That streamer no longer exists. Ask CBSOFT for a new link." };
+      }
+
+      if (target.pageId !== params.pageId) {
+        return {
+          ok: false as const,
+          message: `This link is for a different Page. Choose the Page already connected to ${target.name}, or ask CBSOFT for a new link.`,
+        };
+      }
+
       await tx
         .update(streamers)
         .set({ ...tokenFields, pageName: params.pageName })
-        .where(eq(streamers.id, id));
+        .where(eq(streamers.id, target.id));
+
+      id = target.id;
+    } else if (byPage) {
+      // Already on the roster under a different route in. Topping up its token
+      // is what the streamer meant, and the only thing the schema permits.
+      await tx
+        .update(streamers)
+        .set({ ...tokenFields, pageName: params.pageName })
+        .where(eq(streamers.id, byPage.id));
+
+      id = byPage.id;
     } else {
       /*
        * `streamerCode` comes from the Page id, not the name.
        *
        * It has to be unique and stable, and two streamers may both be called
        * "Blade". An admin renames it afterwards if they care — the code is a
-       * handle, not a display name, and a collision here would fail the insert
-       * on somebody else's behalf.
+       * handle, not a display name, and a collision on a name would fail the
+       * insert on somebody else's behalf.
        */
       const [created] = await tx
         .insert(streamers)
@@ -1218,6 +1264,9 @@ export async function attachConnectedPageToken(params: {
     }
 
     await tx.insert(auditLogs).values({
+      // Null actor: the streamer is not a dashboard user, and attributing this
+      // to whichever admin sent the link would record something that did not
+      // happen.
       userId: null,
       action: AUDIT_ACTIONS.tokenAdded,
       entityType: AUDIT_ENTITY_TYPES.streamer,
@@ -1230,6 +1279,6 @@ export async function attachConnectedPageToken(params: {
       },
     });
 
-    return id;
+    return { ok: true as const, streamerId: id };
   });
 }

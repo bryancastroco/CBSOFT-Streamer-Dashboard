@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { isUsable } from "@/lib/connect/invitations";
 import type { ActionState } from "@/lib/forms/action-state";
 import { connectChosenPage } from "@/lib/services/connect-page";
-import { findInvitationByToken } from "@/lib/repositories/page-connections";
+import { findInvitationByToken, recordError } from "@/lib/repositories/page-connections";
 
 /**
  * The Server Action behind the Page choice.
@@ -42,12 +42,39 @@ export async function connectPageAction(
     return { status: "error", message: "This link is no longer valid. Ask CBSOFT for a new one." };
   }
 
-  const outcome = await connectChosenPage({
-    connectionId: invitation.id,
-    inviteeLabel: invitation.inviteeLabel,
-    streamerId: invitation.streamerId,
-    pageId,
-  });
+  /*
+   * Wrapped, unlike the admin actions.
+   *
+   * An unhandled throw in a Server Action reaches an admin as a red error
+   * boundary they can screenshot and send to someone. It reaches a streamer as
+   * a blank crash on a page they were asked to visit once, and the invitation
+   * records nothing — so nobody learns it happened, and the admin sees only
+   * that they never finished.
+   *
+   * The message is deliberately vague: this catches the unexpected, and an
+   * unexpected error's text is not something to show an outsider. What matters
+   * is that they are told to say something, and that the row is marked.
+   */
+  let outcome: Awaited<ReturnType<typeof connectChosenPage>>;
+
+  try {
+    outcome = await connectChosenPage({
+      connectionId: invitation.id,
+      inviteeLabel: invitation.inviteeLabel,
+      streamerId: invitation.streamerId,
+      pageId,
+    });
+  } catch (cause) {
+    await recordError(
+      invitation.id,
+      cause instanceof Error ? cause.message : "Unexpected failure while connecting.",
+    );
+
+    return {
+      status: "error",
+      message: "Something went wrong connecting that Page. Please tell CBSOFT and try again later.",
+    };
+  }
 
   if (!outcome.ok) return { status: "error", message: outcome.message };
 

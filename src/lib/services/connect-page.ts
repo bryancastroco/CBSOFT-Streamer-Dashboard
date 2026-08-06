@@ -112,7 +112,7 @@ export async function connectChosenPage(params: {
     return { ok: false, message: validation.message };
   }
 
-  const streamerId = await attachConnectedPageToken({
+  const attached = await attachConnectedPageToken({
     streamerId: params.streamerId,
     fallbackName: params.inviteeLabel,
     pageId: chosen.id,
@@ -120,6 +120,17 @@ export async function connectChosenPage(params: {
     token: chosen.accessToken,
     validation,
   });
+
+  // A refusal here means the choice conflicts with the roster — the Page
+  // belongs to a different streamer, or the invitation was for another Page.
+  // Recorded so an admin sees why the streamer stalled rather than being told
+  // only that they did.
+  if (!attached.ok) {
+    await recordError(params.connectionId, attached.message);
+    return { ok: false, message: attached.message };
+  }
+
+  const streamerId = attached.streamerId;
 
   await recordAuditLog({
     userId: null,

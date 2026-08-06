@@ -93,7 +93,22 @@ export function buildContentSecurityPolicy(params: {
     // Stops a `<base>` tag injected into the DOM from re-pointing every
     // relative URL in the page at an attacker's host.
     "base-uri": ["'self'"],
-    "form-action": ["'self'"],
+    /*
+     * Facebook is here because the self-service Page connection posts a form to
+     * `/api/connect/{token}/start`, which answers with a 303 to Facebook's
+     * OAuth dialog.
+     *
+     * Chrome applies `form-action` to the *redirect target* of a form
+     * submission, not only to the immediate action — so `'self'` alone silently
+     * blocks the navigation and the streamer's button appears to do nothing.
+     * The failure is invisible outside the console, which is why it is worth a
+     * comment rather than a rediscovery.
+     *
+     * Narrow on purpose: one host, the one we deliberately send people to. A
+     * `https:` wildcard here would make every form on the site a working
+     * exfiltration channel for an injected `<form>`.
+     */
+    "form-action": ["'self'", "https://www.facebook.com"],
     "frame-ancestors": ["'none'"],
     "manifest-src": ["'self'"],
     "worker-src": ["'self'", "blob:"],

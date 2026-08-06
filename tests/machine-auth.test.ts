@@ -244,6 +244,25 @@ describe("Content-Security-Policy", () => {
     expect(value).toContain("form-action 'self'");
   });
 
+  it("lets a form reach Facebook's OAuth dialog, and nowhere else off-site", () => {
+    /*
+     * The self-service Page connection posts to our own start route, which
+     * answers with a 303 to Facebook. Chrome applies `form-action` to the
+     * redirect *target*, not only the immediate action, so omitting this host
+     * blocks the navigation — and it fails silently, with the streamer's button
+     * appearing to do nothing and only a console entry to say why.
+     *
+     * Pinned as an exact list because the risk of widening it is the same in
+     * both directions: drop Facebook and the connect flow dies; add a wildcard
+     * and every injected `<form>` gains a working exfiltration target.
+     */
+    const directive = policy()
+      .split("; ")
+      .find((part) => part.startsWith("form-action "));
+
+    expect(directive).toBe("form-action 'self' https://www.facebook.com");
+  });
+
   it("allows the browser to reach Supabase, and nothing else remote", () => {
     // Auth is the only thing the browser calls directly. Every Meta and
     // Anthropic call happens on the server, which is what keeps this short.
