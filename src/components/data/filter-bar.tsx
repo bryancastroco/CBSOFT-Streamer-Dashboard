@@ -54,6 +54,15 @@ export type FilterBarOptions = {
    * until an admin has configured one.
    */
   games?: readonly { id: string; name: string }[];
+  /**
+   * Hide the streamer picker on a screen that is already one streamer.
+   *
+   * It was offered on the streamer detail page and did nothing: those tabs
+   * scope by the route's id and ignore `streamerId`, so choosing a name added a
+   * parameter and changed no rows. A control that looks like it filters and
+   * does not is worse than no control.
+   */
+  showStreamer?: boolean;
   /** Hide the posts/videos switch on screens that are already one or the other. */
   showScope?: boolean;
   /** Hide the search box on screens with nothing to search. */
@@ -186,24 +195,26 @@ export function FilterBar<K extends string>({
         ) : null}
 
         {/* ---------------------------------------------------------------- */}
-        <div className="grid gap-1.5 lg:w-56">
-          <Label htmlFor={`${ids}-streamer`} className="text-xs text-muted-foreground">
-            Streamer
-          </Label>
-          <select
-            id={`${ids}-streamer`}
-            className={selectClass}
-            value={query.streamerId ?? ""}
-            onChange={(event) => go({ streamerId: event.target.value || null })}
-          >
-            <option value="">All streamers</option>
-            {options.streamers.map((streamer) => (
-              <option key={streamer.id} value={streamer.id}>
-                {streamer.streamerCode} · {streamer.streamerName}
-              </option>
-            ))}
-          </select>
-        </div>
+        {options.showStreamer !== false ? (
+          <div className="grid gap-1.5 lg:w-56">
+            <Label htmlFor={`${ids}-streamer`} className="text-xs text-muted-foreground">
+              Streamer
+            </Label>
+            <select
+              id={`${ids}-streamer`}
+              className={selectClass}
+              value={query.streamerId ?? ""}
+              onChange={(event) => go({ streamerId: event.target.value || null })}
+            >
+              <option value="">All streamers</option>
+              {options.streamers.map((streamer) => (
+                <option key={streamer.id} value={streamer.id}>
+                  {streamer.streamerCode} · {streamer.streamerName}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         {games.length > 0 ? (
           <div className="grid gap-1.5 lg:w-48">

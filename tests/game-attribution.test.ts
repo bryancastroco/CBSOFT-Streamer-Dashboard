@@ -39,6 +39,7 @@ vi.mock("@/lib/db", () => ({
 // through `getDb`, and a static import would bind the real one.
 const { resolveContentGames } = await import("@/lib/services/resolve-games");
 const { listPosts } = await import("@/lib/repositories/posts");
+const { getStreamerOverview } = await import("@/lib/repositories/metrics");
 const { UNFILED_GAME } = await import("@/lib/filters/browse");
 
 let client: PGlite;
@@ -427,5 +428,42 @@ describe("filtering by game", () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.gameName).toBe("Cabal Mobile");
     expect(items[0]!.gameSource).toBe("hashtag");
+  });
+});
+
+/**
+ * The streamer Overview tab.
+ *
+ * Its figures come from `metrics.ts` aggregates rather than from `listPosts`,
+ * so "the filter works on the table" is not evidence that it works here. This
+ * is the case where a missed clause is least visible: the counts stay
+ * plausible, they just describe more content than the reader selected.
+ */
+describe("the streamer overview honours a game", () => {
+  beforeEach(async () => {
+    await client.query("delete from posts");
+
+    await seedPost("ov-pc", "Ranked grind #CabalSEA");
+    await seedPost("ov-mobile-a", "Boss run #CabalMobile");
+    await seedPost("ov-mobile-b", "Another run #CabalMSEA");
+
+    await resolveContentGames();
+  });
+
+  it("counts only the selected game's posts", async () => {
+    const filtered = await getStreamerOverview({ streamerId, gameId: mobileId });
+    const all = await getStreamerOverview({ streamerId });
+
+    expect(filtered.postCount).toBe(2);
+    expect(all.postCount).toBe(3);
+  });
+
+  it("counts the unattributed as its own selection, not as everything", async () => {
+    await seedPost("ov-plain", "Good morning");
+    await resolveContentGames();
+
+    const unfiled = await getStreamerOverview({ streamerId, gameId: UNFILED_GAME });
+
+    expect(unfiled.postCount).toBe(1);
   });
 });

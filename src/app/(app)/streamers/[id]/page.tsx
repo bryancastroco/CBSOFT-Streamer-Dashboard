@@ -53,6 +53,7 @@ import {
 } from "@/lib/filters/sorting";
 import { EXPECTED_SCOPES } from "@/lib/meta/token-status";
 import { listCommentAnalyses } from "@/lib/repositories/analysis";
+import { listGameOptions } from "@/lib/repositories/games";
 import { getStreamerOverview, type MetricTotal } from "@/lib/repositories/metrics";
 import { getPageGrowth } from "@/lib/repositories/page-growth";
 import { listPosts } from "@/lib/repositories/posts";
@@ -180,7 +181,18 @@ async function OverviewTab({ streamerId, params }: { streamerId: string; params:
        * The grid above is "what did they publish"; this is "did the audience
        * grow", which is the outcome that publishing is meant to produce.
        */}
-      <GrowthPanel growth={growth} />
+      <GrowthPanel
+        growth={growth}
+        /*
+         * Said out loud when a game is selected. The grid above narrows to that
+         * game; this panel cannot, because a follower belongs to the Page and
+         * not to any one title. Left unsaid, the two would read as one filtered
+         * view and the follower count would look like the game's audience.
+         */
+        {...(query.gameId
+          ? { note: "Followers belong to the whole Page, so the game filter does not apply here." }
+          : {})}
+      />
     </div>
   );
 }
@@ -189,10 +201,12 @@ async function PostsTab({
   streamerId,
   params,
   basePath,
+  showGames,
 }: {
   streamerId: string;
   params: RawParams;
   basePath: string;
+  showGames: boolean;
 }) {
   const query = resolveBrowseQuery({
     raw: params,
@@ -223,6 +237,7 @@ async function PostsTab({
             query={query}
             basePath={basePath}
             showStreamer={false}
+            showGames={showGames}
             empty={{
               title: "No posts in this period",
               description:
@@ -257,8 +272,10 @@ async function VideosTab({
   streamerId,
   params,
   basePath,
+  showGames,
 }: {
   streamerId: string;
+  showGames: boolean;
   params: RawParams;
   basePath: string;
 }) {
@@ -291,6 +308,7 @@ async function VideosTab({
             query={query}
             basePath={basePath}
             showStreamer={false}
+            showGames={showGames}
             empty={{
               title: "No videos in this period",
               description:
@@ -710,7 +728,7 @@ export default async function StreamerDetailPage({
     defaultSort: { key: "none", direction: "desc" } as SortState<"none">,
   });
 
-  const streamers = await listStreamerOptions();
+  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   /**
    * Tab links carry the filters. `basePath` keeps `?tab=` so a sort or a page
@@ -791,6 +809,10 @@ export default async function StreamerDetailPage({
           defaultSort={{ key: "none", direction: "desc" }}
           options={{
             streamers,
+            games,
+            // Every tab here is already this one streamer, and the picker did
+            // nothing — see `showStreamer` in FilterBar.
+            showStreamer: false,
             showScope: tab === "analysis",
             showSearch: tab !== "overview",
             searchPlaceholder: "Search this streamer's content…",
@@ -801,10 +823,20 @@ export default async function StreamerDetailPage({
       <Suspense key={`${tab}-${JSON.stringify(raw)}`} fallback={FALLBACKS[tab]}>
         {tab === "overview" ? <OverviewTab streamerId={streamer.id} params={raw} /> : null}
         {tab === "posts" ? (
-          <PostsTab streamerId={streamer.id} params={raw} basePath={basePath} />
+          <PostsTab
+            streamerId={streamer.id}
+            params={raw}
+            basePath={basePath}
+            showGames={games.length > 0}
+          />
         ) : null}
         {tab === "videos" ? (
-          <VideosTab streamerId={streamer.id} params={raw} basePath={basePath} />
+          <VideosTab
+            streamerId={streamer.id}
+            params={raw}
+            basePath={basePath}
+            showGames={games.length > 0}
+          />
         ) : null}
         {tab === "analysis" ? (
           <AnalysisTab streamerId={streamer.id} params={raw} basePath={basePath} />

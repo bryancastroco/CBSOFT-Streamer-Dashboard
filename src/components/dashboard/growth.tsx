@@ -37,9 +37,19 @@ function signed(value: number): string {
 export function GrowthPanel({
   growth,
   title = "Audience growth",
+  note,
 }: {
   growth: PageGrowth;
   title?: string;
+  /**
+   * A caveat about what this panel does *not* honour.
+   *
+   * Followers belong to the Page, not to a post, so a filter that narrows
+   * content cannot narrow them. Sitting silently beside filtered content
+   * figures, these numbers would read as "this game's audience" — a claim Meta
+   * never made and this data cannot support.
+   */
+  note?: string | undefined;
 }) {
   if (growth.series.length === 0) {
     return (
@@ -77,7 +87,7 @@ export function GrowthPanel({
            * period reaches past Meta's rolling history or past the day
            * collection started.
            */}
-          {formatDay(growth.from)} to {formatDay(growth.to)}.
+          {formatDay(growth.from)} to {formatDay(growth.to)}.{note ? ` ${note}` : null}
         </CardDescription>
       </CardHeader>
 
