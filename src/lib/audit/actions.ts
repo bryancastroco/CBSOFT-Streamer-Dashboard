@@ -35,6 +35,18 @@ export const AUDIT_ACTIONS = {
   streamerPurged: "streamer.purged",
   streamerSyncRequested: "streamer.sync_requested",
 
+  /**
+   * The games registry, and which streamer covers what.
+   *
+   * Separate from `streamer.updated` because attribution changes what every
+   * report says a post was about — a silent edit to a hashtag re-files history,
+   * and "why did last month's Cabal Mobile numbers change" has to be answerable.
+   */
+  gameCreated: "game.created",
+  gameUpdated: "game.updated",
+  gameDeleted: "game.deleted",
+  streamerGamesChanged: "streamer.games_changed",
+
   // Phase 4 — synchronisation
   postsSynced: "posts.synced",
 
@@ -77,6 +89,7 @@ export const AUDIT_ENTITY_TYPES = {
   syncRun: "sync_run",
   post: "post",
   video: "video",
+  game: "game",
 } as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[keyof typeof AUDIT_ENTITY_TYPES];
@@ -99,6 +112,10 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.streamerDeleted]: "Streamer removed from roster",
   [AUDIT_ACTIONS.streamerPurged]: "Streamer permanently deleted",
   [AUDIT_ACTIONS.streamerSyncRequested]: "Manual sync requested",
+  [AUDIT_ACTIONS.gameCreated]: "Game added",
+  [AUDIT_ACTIONS.gameUpdated]: "Game updated",
+  [AUDIT_ACTIONS.gameDeleted]: "Game deleted",
+  [AUDIT_ACTIONS.streamerGamesChanged]: "Streamer games changed",
   [AUDIT_ACTIONS.postsSynced]: "Posts synchronised",
   [AUDIT_ACTIONS.commentsSynced]: "Comments synchronised",
   [AUDIT_ACTIONS.commentsSummarized]: "Comments summarised",

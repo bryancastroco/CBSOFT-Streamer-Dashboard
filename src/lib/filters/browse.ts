@@ -37,8 +37,26 @@ function first(value: string | string[] | undefined): string | undefined {
  * streamer_id = $1` as a cast error rather than an empty result. `search` is
  * length-capped because it becomes an `ILIKE '%…%'` pattern.
  */
+/**
+ * The sentinel for "attributed to no game at all".
+ *
+ * A third state, not the absence of a filter. Once games are configured,
+ * unattributed content is a real and actionable category — a post with no
+ * hashtag by a streamer with no primary game — and it is precisely what an
+ * admin needs to list in order to find the gap in the configuration. Expressing
+ * it as a reserved value keeps the whole filter one parameter rather than two
+ * that can contradict each other.
+ *
+ * Not a uuid, so it can never collide with a real game id.
+ */
+export const UNFILED_GAME = "none";
+
 const primitivesSchema = z.object({
   streamerId: z.uuid().optional().catch(undefined),
+  gameId: z
+    .union([z.uuid(), z.literal(UNFILED_GAME)])
+    .optional()
+    .catch(undefined),
   search: z.string().trim().min(1).max(200).optional().catch(undefined),
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0).catch(0),
 });
@@ -49,6 +67,16 @@ export type BrowseQuery<K extends string> = {
   period: ResolvedPeriod;
   scope: ContentScope;
   streamerId: string | undefined;
+  /**
+   * The game a piece of content was filed under.
+   *
+   * An id rather than the slug that appears in the admin screen: a game can be
+   * renamed, and a filter that survives a rename is the one keyed on identity.
+   * The slug stays a display and lookup concern.
+   *
+   * `UNFILED_GAME` selects content attributed to nothing.
+   */
+  gameId: string | undefined;
   search: string | undefined;
   sort: SortState<K>;
   offset: number;
@@ -66,6 +94,7 @@ export function resolveBrowseQuery<K extends string>(params: {
 
   const primitives = primitivesSchema.parse({
     streamerId: first(raw["streamerId"]),
+    gameId: first(raw["gameId"]),
     search: first(raw["search"]),
     offset: first(raw["offset"]) ?? 0,
   });
@@ -79,6 +108,7 @@ export function resolveBrowseQuery<K extends string>(params: {
     }),
     scope: resolveContentScope(first(raw["scope"])),
     streamerId: primitives.streamerId,
+    gameId: primitives.gameId,
     search: primitives.search,
     sort: resolveSort(params.sortKeys, params.defaultSort, {
       sort: first(raw["sort"]),
@@ -99,6 +129,7 @@ export type BrowseOverrides<K extends string> = {
   to?: string | null;
   scope?: ContentScope;
   streamerId?: string | null;
+  gameId?: string | null;
   search?: string | null;
   sort?: K;
   dir?: SortDirection;
@@ -165,6 +196,9 @@ export function buildBrowseHref<K extends string>(
   const streamerId =
     overrides.streamerId !== undefined ? overrides.streamerId : (query.streamerId ?? null);
   if (streamerId) next.set("streamerId", streamerId);
+
+  const gameId = overrides.gameId !== undefined ? overrides.gameId : (query.gameId ?? null);
+  if (gameId) next.set("gameId", gameId);
 
   const search = overrides.search !== undefined ? overrides.search : (query.search ?? null);
   if (search) next.set("search", search);

@@ -4,6 +4,7 @@ import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
+import { gameClause } from "@/lib/db/game-filter";
 import { tsParam, tsResult } from "@/lib/db/params";
 import { commentSummaries, comments, posts, streamers, videos } from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
@@ -52,6 +53,8 @@ export type DashboardMetrics = {
 
 export type MetricsFilters = {
   streamerId?: string | undefined;
+  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  gameId?: string | undefined;
   from?: Date | null;
   to?: Date | null;
   scope?: ContentScope;
@@ -92,6 +95,8 @@ function toTotal(sum: string | number | null, reported: number, missing: number)
 function postWindow(filters: MetricsFilters): SQL[] {
   const conditions: SQL[] = [];
   if (filters.streamerId) conditions.push(eq(posts.streamerId, filters.streamerId));
+  const game = gameClause(posts.gameId, filters.gameId);
+  if (game) conditions.push(game);
   if (filters.from)
     conditions.push(sql`${posts.createdTime} >= ${tsParam(filters.from)}::timestamptz`);
   if (filters.to) conditions.push(sql`${posts.createdTime} <= ${tsParam(filters.to)}::timestamptz`);
@@ -101,6 +106,8 @@ function postWindow(filters: MetricsFilters): SQL[] {
 function videoWindow(filters: MetricsFilters): SQL[] {
   const conditions: SQL[] = [];
   if (filters.streamerId) conditions.push(eq(videos.streamerId, filters.streamerId));
+  const game = gameClause(videos.gameId, filters.gameId);
+  if (game) conditions.push(game);
   if (filters.from)
     conditions.push(sql`${videos.createdTime} >= ${tsParam(filters.from)}::timestamptz`);
   if (filters.to)
@@ -414,11 +421,13 @@ async function countStoredComments(filters: MetricsFilters): Promise<number> {
 /** Aggregates for one streamer's Overview tab, within the selected window. */
 export async function getStreamerOverview(params: {
   streamerId: string;
+  gameId?: string | undefined;
   from?: Date | null;
   to?: Date | null;
 }): Promise<StreamerOverview> {
   const filters: MetricsFilters = {
     streamerId: params.streamerId,
+    gameId: params.gameId,
     from: params.from ?? null,
     to: params.to ?? null,
   };

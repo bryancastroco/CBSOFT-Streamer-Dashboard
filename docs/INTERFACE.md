@@ -14,9 +14,15 @@ src/lib/filters/sorting.ts  sort keys → an allow-list
 src/lib/filters/browse.ts   the combined resolver + the href builder
 ```
 
-`resolveBrowseQuery` reads `period`, `from`, `to`, `scope`, `streamerId`, `search`, `sort`, `dir`
-and `offset` out of the query string. `buildBrowseHref` writes them back, changing only what it is
-given.
+`resolveBrowseQuery` reads `period`, `from`, `to`, `scope`, `streamerId`, `gameId`, `search`,
+`sort`, `dir` and `offset` out of the query string. `buildBrowseHref` writes them back, changing
+only what it is given.
+
+**`gameId` has three states, not two.** Absent means every game; a uuid means that game; the
+reserved value `none` (`UNFILED_GAME`) means content attributed to no game at all. The third is a
+real selection — once games are configured, unattributed content is the category an admin needs to
+list in order to find the gap — so it resolves to `is null`, via the single `gameClause` helper in
+`src/lib/db/game-filter.ts`. The sentinel is not a uuid, so it cannot collide with a real id.
 
 Nothing else constructs a URL. Every sort header, page button, filter control, tab link and export
 link routes through `buildBrowseHref`, which is what makes it impossible for one control to drop a

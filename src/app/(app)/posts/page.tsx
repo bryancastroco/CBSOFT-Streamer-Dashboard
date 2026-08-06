@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/guards";
 import { buildBrowseHref, resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
 import { POST_SORT_KEYS } from "@/lib/filters/sorting";
+import { listGameOptions } from "@/lib/repositories/games";
 import { listPosts } from "@/lib/repositories/posts";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 const BASE_PATH = "/posts";
 
-async function PostsPanel({ params }: { params: RawParams }) {
+async function PostsPanel({ params, showGames }: { params: RawParams; showGames: boolean }) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: POST_SORT_KEYS,
@@ -28,6 +29,7 @@ async function PostsPanel({ params }: { params: RawParams }) {
 
   const { items, total } = await listPosts({
     streamerId: query.streamerId,
+    gameId: query.gameId,
     search: query.search,
     from: query.period.from,
     to: query.period.to,
@@ -37,7 +39,10 @@ async function PostsPanel({ params }: { params: RawParams }) {
   });
 
   const isFiltered =
-    query.search !== undefined || query.streamerId !== undefined || query.period.preset !== "all";
+    query.search !== undefined ||
+    query.streamerId !== undefined ||
+    query.gameId !== undefined ||
+    query.period.preset !== "all";
 
   return (
     <>
@@ -47,6 +52,7 @@ async function PostsPanel({ params }: { params: RawParams }) {
             items={items}
             query={query}
             basePath={BASE_PATH}
+            showGames={showGames}
             empty={{
               title: "No posts match these filters",
               description: isFiltered
@@ -93,7 +99,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
     sortKeys: POST_SORT_KEYS,
     defaultSort: POSTS_DEFAULT_SORT,
   });
-  const streamers = await listStreamerOptions();
+  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   return (
     <>
@@ -108,6 +114,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
         defaultSort={POSTS_DEFAULT_SORT}
         options={{
           streamers,
+          games,
           showScope: false,
           searchPlaceholder: "Message, post id or streamer…",
         }}
@@ -128,7 +135,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
           </Card>
         }
       >
-        <PostsPanel params={params} />
+        <PostsPanel params={params} showGames={games.length > 0} />
       </Suspense>
     </>
   );

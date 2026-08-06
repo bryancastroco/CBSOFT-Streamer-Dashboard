@@ -42,11 +42,18 @@ describe("migrations apply cleanly", () => {
       "content_metric_snapshots",
       "content_metrics_current",
       "export_runs",
+      // The games registry — migration 0017. `game_hashtags.tag` is globally
+      // unique, because a hashtag that named two games could not decide which
+      // one a post belongs to.
+      "game_hashtags",
+      "games",
       // Daily Page audience figures. `followers` is a running total,
       // `new_follows` that day's arrivals — see migration 0016.
       "page_metrics_daily",
       "post_insights",
       "posts",
+      // Which streamer covers which game, with at most one primary each.
+      "streamer_games",
       "streamers",
       "sync_runs",
       "users",

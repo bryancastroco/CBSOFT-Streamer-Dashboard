@@ -10,6 +10,7 @@ import { analyzeWithFallback } from "@/lib/ai/resolve";
 import type { CommentAnalysis } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
 import { commentOverviewSummaries, commentSummaries, comments } from "@/lib/db/schema";
+import { gameClause } from "@/lib/db/game-filter";
 import { resultRows, tsParam } from "@/lib/db/params";
 import type { DashboardFilters } from "@/lib/repositories/dashboard";
 
@@ -102,9 +103,11 @@ export type CommentOverview = {
 /** Period and streamer predicates, for a content table aliased `t`. */
 function contentClauses(filters: DashboardFilters): SQL {
   const { streamerId, period } = filters;
+  const game = gameClause(sql`t.game_id`, filters.gameId);
 
   return sql`true
     ${streamerId ? sql`and t.streamer_id = ${streamerId}` : sql``}
+    ${game ? sql`and ${game}` : sql``}
     ${period.from ? sql`and t.created_time >= ${tsParam(period.from)}::timestamptz` : sql``}
     ${period.to ? sql`and t.created_time <= ${tsParam(period.to)}::timestamptz` : sql``}`;
 }

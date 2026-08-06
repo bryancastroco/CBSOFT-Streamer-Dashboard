@@ -8,6 +8,7 @@ import {
   SyncPanel,
   TokenPanel,
 } from "@/app/(app)/admin/streamers/[id]/panels";
+import { StreamerGamesCard } from "@/app/(app)/admin/streamers/[id]/games-card";
 import { StreamerRemovalCard } from "@/app/(app)/admin/streamers/[id]/removal-card";
 import { SyncPostsPanel } from "@/app/(app)/admin/streamers/[id]/sync-posts-panel";
 import { SyncVideosPanel } from "@/app/(app)/admin/streamers/[id]/sync-videos-panel";
@@ -20,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { requireAdmin } from "@/lib/auth/guards";
 import { EXPECTED_SCOPES } from "@/lib/meta/token-status";
+import { listGameOptions, listStreamerGames } from "@/lib/repositories/games";
 import { countPostsForStreamer } from "@/lib/repositories/posts";
 import {
   getStreamerById,
@@ -68,11 +70,13 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
   const streamer = await getStreamerById(parsed.data);
   if (!streamer) notFound();
 
-  const [syncRuns, postCount, videoCount, removal] = await Promise.all([
+  const [syncRuns, postCount, videoCount, removal, gameOptions, streamerGames] = await Promise.all([
     listSyncRunsForStreamer(streamer.id, 5),
     countPostsForStreamer(streamer.id),
     countVideosForStreamer(streamer.id),
     getStreamerRemovalView(streamer.id),
+    listGameOptions(),
+    listStreamerGames(streamer.id),
   ]);
   const grantedScopes = new Set(streamer.tokenScopes);
 
@@ -198,6 +202,15 @@ export default async function StreamerDetailPage({ params }: { params: Promise<{
             <EditStreamerPanel streamer={streamer} />
           </CardContent>
         </Card>
+      ) : null}
+
+      {/* ---------------------------------------------------------------- */}
+      {!streamer.deletedAt ? (
+        <StreamerGamesCard
+          streamerId={streamer.id}
+          options={gameOptions}
+          assignments={streamerGames}
+        />
       ) : null}
 
       {/* ---------------------------------------------------------------- */}

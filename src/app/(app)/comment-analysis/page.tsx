@@ -12,6 +12,7 @@ import { requireUser } from "@/lib/auth/guards";
 import { buildBrowseHref, resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
 import { ANALYSIS_SORT_KEYS } from "@/lib/filters/sorting";
 import { listCommentAnalyses } from "@/lib/repositories/analysis";
+import { listGameOptions } from "@/lib/repositories/games";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 
 export const metadata: Metadata = { title: "Comment analysis" };
@@ -28,6 +29,7 @@ async function AnalysisPanel({ params }: { params: RawParams }) {
 
   const { items, total } = await listCommentAnalyses({
     streamerId: query.streamerId,
+    gameId: query.gameId,
     search: query.search,
     from: query.period.from,
     to: query.period.to,
@@ -88,7 +90,7 @@ export default async function CommentAnalysisPage({
     sortKeys: ANALYSIS_SORT_KEYS,
     defaultSort: ANALYSIS_DEFAULT_SORT,
   });
-  const streamers = await listStreamerOptions();
+  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   return (
     <>
@@ -101,7 +103,7 @@ export default async function CommentAnalysisPage({
         query={query}
         basePath={BASE_PATH}
         defaultSort={ANALYSIS_DEFAULT_SORT}
-        options={{ streamers, searchPlaceholder: "Summary text, content title or streamer…" }}
+        options={{ streamers, games, searchPlaceholder: "Summary text, content title or streamer…" }}
       />
 
       <Suspense

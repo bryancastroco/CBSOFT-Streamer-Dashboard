@@ -7,7 +7,7 @@ import { Loader2, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { buildBrowseHref, type BrowseQuery } from "@/lib/filters/browse";
+import { UNFILED_GAME, buildBrowseHref, type BrowseQuery } from "@/lib/filters/browse";
 import {
   CONTENT_SCOPES,
   CONTENT_SCOPE_LABELS,
@@ -45,6 +45,15 @@ import { cn } from "@/lib/utils";
 export type FilterBarOptions = {
   /** Streamers to choose between. Identity only — no token fields exist here. */
   streamers: readonly { id: string; streamerCode: string; streamerName: string }[];
+  /**
+   * Games to choose between, or an empty list.
+   *
+   * The control is omitted entirely when nothing is registered, rather than
+   * shown with a single "All games" entry. An empty filter teaches the reader
+   * that games do not apply here; its absence teaches nothing, which is right
+   * until an admin has configured one.
+   */
+  games?: readonly { id: string; name: string }[];
   /** Hide the posts/videos switch on screens that are already one or the other. */
   showScope?: boolean;
   /** Hide the search box on screens with nothing to search. */
@@ -116,7 +125,10 @@ export function FilterBar<K extends string>({
     query.period.preset !== DEFAULT_PERIOD ||
     query.scope !== "all" ||
     query.streamerId !== undefined ||
+    query.gameId !== undefined ||
     query.search !== undefined;
+
+  const games = options.games ?? [];
 
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -192,6 +204,34 @@ export function FilterBar<K extends string>({
             ))}
           </select>
         </div>
+
+        {games.length > 0 ? (
+          <div className="grid gap-1.5 lg:w-48">
+            <Label htmlFor={`${ids}-game`} className="text-xs text-muted-foreground">
+              Game
+            </Label>
+            <select
+              id={`${ids}-game`}
+              className={selectClass}
+              value={query.gameId ?? ""}
+              onChange={(event) => go({ gameId: event.target.value || null })}
+            >
+              <option value="">All games</option>
+              {games.map((game) => (
+                <option key={game.id} value={game.id}>
+                  {game.name}
+                </option>
+              ))}
+              {/*
+               * A deliberate third state. Once games exist, content with no
+               * attribution is a real category — a post with no hashtag by a
+               * streamer with no primary game — and it is the category an admin
+               * needs to find in order to fix the configuration.
+               */}
+              <option value={UNFILED_GAME}>Not filed under a game</option>
+            </select>
+          </div>
+        ) : null}
 
         {options.showScope !== false ? (
           <div className="grid gap-1.5 lg:w-44">

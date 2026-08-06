@@ -4,6 +4,7 @@ import { sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
+import { gameClause } from "@/lib/db/game-filter";
 import { pageOffset, pageSize, tsParam } from "@/lib/db/params";
 import type { ContentType } from "@/lib/comments/content-ref";
 import type { ContentScope } from "@/lib/filters/period";
@@ -54,6 +55,8 @@ export type AnalysisListItem = {
 
 export type ListAnalysesFilters = {
   streamerId?: string | undefined;
+  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  gameId?: string | undefined;
   search?: string | undefined;
   from?: Date | null;
   to?: Date | null;
@@ -114,6 +117,12 @@ function unifiedSource(filters: ListAnalysesFilters): SQL {
     postConditions.push(sql`s.id = ${filters.streamerId}::uuid`);
     videoConditions.push(sql`s.id = ${filters.streamerId}::uuid`);
   }
+
+  const postGame = gameClause(sql`p.game_id`, filters.gameId);
+  const videoGame = gameClause(sql`v.game_id`, filters.gameId);
+  if (postGame) postConditions.push(postGame);
+  if (videoGame) videoConditions.push(videoGame);
+
   if (filters.from) {
     postConditions.push(sql`p.created_time >= ${tsParam(filters.from)}::timestamptz`);
     videoConditions.push(sql`v.created_time >= ${tsParam(filters.from)}::timestamptz`);

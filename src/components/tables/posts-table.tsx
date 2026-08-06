@@ -10,6 +10,7 @@ import {
   MobileDataCard,
   type Column,
 } from "@/components/data/data-table";
+import { GameBadge } from "@/components/data/game-badge";
 import { SortLink } from "@/components/data/sortable-header";
 import { EmptyState } from "@/components/layout/states";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ export function PostsTable({
   query,
   basePath,
   showStreamer = true,
+  showGames = false,
   empty,
 }: {
   items: readonly PostTableItem[];
@@ -71,6 +73,8 @@ export function PostsTable({
   basePath: string;
   /** Dropped inside a streamer's own tab, where every row is that streamer. */
   showStreamer?: boolean;
+  /** Only once an admin has registered a game. See `GameBadge`. */
+  showGames?: boolean;
   empty: { title: string; description: string; action?: { label: string; href: string } };
 }) {
   const sortable = (label: string, column: PostSortKey) => (
@@ -119,9 +123,12 @@ export function PostsTable({
             permalinkUrl={post.permalinkUrl}
             href={`/posts/${post.id}`}
           />
-          <p className="text-xs whitespace-nowrap text-muted-foreground">
-            {formatWhen(post.createdTime)}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs whitespace-nowrap text-muted-foreground">
+              {formatWhen(post.createdTime)}
+            </p>
+            <GameBadge name={post.gameName} source={post.gameSource} show={showGames} />
+          </div>
         </div>
       ),
     },
@@ -248,7 +255,10 @@ export function PostsTable({
             href={`/posts/${post.id}`}
           />
 
-          <p className="text-xs text-muted-foreground">{formatWhen(post.createdTime)}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs text-muted-foreground">{formatWhen(post.createdTime)}</p>
+            <GameBadge name={post.gameName} source={post.gameSource} show={showGames} />
+          </div>
 
           {/*
            * Three figures, labelled. A phone has room for the numbers that

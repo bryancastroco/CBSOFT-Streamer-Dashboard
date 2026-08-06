@@ -4,6 +4,7 @@ import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
+import { gameClause } from "@/lib/db/game-filter";
 import { tsParam } from "@/lib/db/params";
 import { commentSummaries, posts, streamers, videos } from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
@@ -39,6 +40,8 @@ export type Period = { from: Date | null; to: Date | null };
 
 export type DashboardFilters = {
   streamerId?: string | undefined;
+  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  gameId?: string | undefined;
   period: Period;
   scope: ContentScope;
 };
@@ -65,6 +68,24 @@ function within(
   if (period.from) clauses.push(sql`${column} >= ${tsParam(period.from)}::timestamptz`);
   if (period.to) clauses.push(sql`${column} <= ${tsParam(period.to)}::timestamptz`);
   return clauses;
+}
+
+/**
+ * Streamer, game and period for one content table, in one place.
+ *
+ * Every query below scopes the same three ways, and each was previously
+ * spelling that out inline. Collecting it means a fourth filter cannot be added
+ * to five of six queries — which is a silent wrong answer, not an error.
+ */
+function contentScope(
+  table: typeof posts | typeof videos,
+  filters: DashboardFilters,
+): (SQL | undefined)[] {
+  return [
+    streamerFilter(table.streamerId, filters.streamerId),
+    gameClause(table.gameId, filters.gameId),
+    ...within(table.createdTime, filters.period),
+  ];
 }
 
 /**
@@ -102,6 +123,7 @@ export type MetricsComparison = {
 export async function getMetricsComparison(filters: DashboardFilters): Promise<MetricsComparison> {
   const base: MetricsFilters = {
     streamerId: filters.streamerId,
+    gameId: filters.gameId,
     scope: filters.scope,
   };
 
@@ -139,12 +161,7 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
           count: sql<number>`count(*)::int`,
         })
         .from(posts)
-        .where(
-          and(
-            streamerFilter(posts.streamerId, filters.streamerId),
-            ...within(posts.createdTime, filters.period),
-          ),
-        )
+        .where(and(...contentScope(posts, filters)))
         .groupBy(sql`date_trunc('day', ${posts.createdTime})`)
     : [];
 
@@ -155,12 +172,7 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
           count: sql<number>`count(*)::int`,
         })
         .from(videos)
-        .where(
-          and(
-            streamerFilter(videos.streamerId, filters.streamerId),
-            ...within(videos.createdTime, filters.period),
-          ),
-        )
+        .where(and(...contentScope(videos, filters)))
         .groupBy(sql`date_trunc('day', ${videos.createdTime})`)
     : [];
 
@@ -219,11 +231,7 @@ export async function getTopStreamers(
     .from(posts)
     .innerJoin(streamers, eq(streamers.id, posts.streamerId))
     .where(
-      and(
-        isNull(streamers.deletedAt),
-        streamerFilter(posts.streamerId, filters.streamerId),
-        ...within(posts.createdTime, filters.period),
-      ),
+      and(isNull(streamers.deletedAt), ...contentScope(posts, filters)),
     )
     .groupBy(streamers.id, streamers.streamerName, streamers.streamerCode)
     .orderBy(
@@ -265,10 +273,14 @@ function summaryScopeClauses(filters: DashboardFilters): SQL[] {
   const clauses: SQL[] = [];
   const { streamerId, period, scope } = filters;
 
+  const postGame = gameClause(sql`p.game_id`, filters.gameId);
+  const videoGame = gameClause(sql`v.game_id`, filters.gameId);
+
   const postMatch = sql`exists (
     select 1 from ${posts} p
      where p.id = ${commentSummaries.postId}
        ${streamerId ? sql`and p.streamer_id = ${streamerId}` : sql``}
+       ${postGame ? sql`and ${postGame}` : sql``}
        ${period.from ? sql`and p.created_time >= ${tsParam(period.from)}::timestamptz` : sql``}
        ${period.to ? sql`and p.created_time <= ${tsParam(period.to)}::timestamptz` : sql``}
   )`;
@@ -277,6 +289,7 @@ function summaryScopeClauses(filters: DashboardFilters): SQL[] {
     select 1 from ${videos} v
      where v.id = ${commentSummaries.videoId}
        ${streamerId ? sql`and v.streamer_id = ${streamerId}` : sql``}
+       ${videoGame ? sql`and ${videoGame}` : sql``}
        ${period.from ? sql`and v.created_time >= ${tsParam(period.from)}::timestamptz` : sql``}
        ${period.to ? sql`and v.created_time <= ${tsParam(period.to)}::timestamptz` : sql``}
   )`;
@@ -361,13 +374,7 @@ export async function listRecentContent(
           .from(posts)
           .innerJoin(streamers, eq(streamers.id, posts.streamerId))
           .leftJoin(commentSummaries, eq(commentSummaries.postId, posts.id))
-          .where(
-            and(
-              isNull(streamers.deletedAt),
-              streamerFilter(posts.streamerId, filters.streamerId),
-              ...within(posts.createdTime, filters.period),
-            ),
-          )
+          .where(and(isNull(streamers.deletedAt), ...contentScope(posts, filters)))
           .orderBy(desc(posts.createdTime))
           .limit(limit);
 
@@ -394,13 +401,7 @@ export async function listRecentContent(
           .from(videos)
           .innerJoin(streamers, eq(streamers.id, videos.streamerId))
           .leftJoin(commentSummaries, eq(commentSummaries.videoId, videos.id))
-          .where(
-            and(
-              isNull(streamers.deletedAt),
-              streamerFilter(videos.streamerId, filters.streamerId),
-              ...within(videos.createdTime, filters.period),
-            ),
-          )
+          .where(and(isNull(streamers.deletedAt), ...contentScope(videos, filters)))
           .orderBy(desc(videos.createdTime))
           .limit(limit);
 

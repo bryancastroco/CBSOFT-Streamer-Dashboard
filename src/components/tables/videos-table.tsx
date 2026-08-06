@@ -10,6 +10,7 @@ import {
   MobileDataCard,
   type Column,
 } from "@/components/data/data-table";
+import { GameBadge } from "@/components/data/game-badge";
 import { SortLink } from "@/components/data/sortable-header";
 import { EmptyState } from "@/components/layout/states";
 import { Button } from "@/components/ui/button";
@@ -59,12 +60,15 @@ export function VideosTable({
   query,
   basePath,
   showStreamer = true,
+  showGames = false,
   empty,
 }: {
   items: readonly VideoTableItem[];
   query: BrowseQuery<VideoSortKey>;
   basePath: string;
   showStreamer?: boolean;
+  /** Only once an admin has registered a game. See `GameBadge`. */
+  showGames?: boolean;
   empty: { title: string; description: string; action?: { label: string; href: string } };
 }) {
   const sortable = (label: string, column: VideoSortKey) => (
@@ -113,9 +117,12 @@ export function VideosTable({
             permalinkUrl={video.permalinkUrl}
             href={`/videos/${video.id}`}
           />
-          <p className="text-xs whitespace-nowrap text-muted-foreground">
-            {formatWhen(video.createdTime)}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs whitespace-nowrap text-muted-foreground">
+              {formatWhen(video.createdTime)}
+            </p>
+            <GameBadge name={video.gameName} source={video.gameSource} show={showGames} />
+          </div>
         </div>
       ),
     },
@@ -243,7 +250,10 @@ export function VideosTable({
             href={`/videos/${video.id}`}
           />
 
-          <p className="text-xs text-muted-foreground">{formatWhen(video.createdTime)}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs text-muted-foreground">{formatWhen(video.createdTime)}</p>
+            <GameBadge name={video.gameName} source={video.gameSource} show={showGames} />
+          </div>
 
           <dl className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
             <div>

@@ -36,6 +36,7 @@ export async function GET(request: Request) {
   try {
     const { items } = await listPosts({
       streamerId: query.streamerId,
+      gameId: query.gameId,
       search: query.search,
       from: query.period.from,
       to: query.period.to,

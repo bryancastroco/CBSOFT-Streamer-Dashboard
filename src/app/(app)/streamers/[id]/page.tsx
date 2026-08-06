@@ -115,6 +115,7 @@ async function OverviewTab({ streamerId, params }: { streamerId: string; params:
   const [overview, growth] = await Promise.all([
     getStreamerOverview({
       streamerId,
+      gameId: query.gameId,
       from: query.period.from,
       to: query.period.to,
     }),
@@ -201,6 +202,10 @@ async function PostsTab({
 
   const { items, total } = await listPosts({
     streamerId,
+    // Honoured if the reader arrived from a game-filtered list. The tab has no
+    // control of its own, so this only ever narrows a selection they already
+    // made — it never silently applies one they did not.
+    gameId: query.gameId,
     search: query.search,
     from: query.period.from,
     to: query.period.to,
@@ -265,6 +270,10 @@ async function VideosTab({
 
   const { items, total } = await listVideos({
     streamerId,
+    // Honoured if the reader arrived from a game-filtered list. The tab has no
+    // control of its own, so this only ever narrows a selection they already
+    // made — it never silently applies one they did not.
+    gameId: query.gameId,
     search: query.search,
     from: query.period.from,
     to: query.period.to,
@@ -329,6 +338,10 @@ async function AnalysisTab({
 
   const { items, total } = await listCommentAnalyses({
     streamerId,
+    // Honoured if the reader arrived from a game-filtered list. The tab has no
+    // control of its own, so this only ever narrows a selection they already
+    // made — it never silently applies one they did not.
+    gameId: query.gameId,
     search: query.search,
     from: query.period.from,
     to: query.period.to,

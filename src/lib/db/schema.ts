@@ -527,6 +527,22 @@ export const posts = pgTable(
      */
     commentsSyncedAt: timestamp("comments_synced_at", { withTimezone: true }),
 
+    /**
+     * Which game this post is about, resolved rather than entered.
+     *
+     * `on delete set null`: removing a game must not remove the posts that
+     * mentioned it. The content is the record; the game is a label on it.
+     */
+    gameId: uuid("game_id").references((): AnyPgColumn => games.id, { onDelete: "set null" }),
+    /**
+     * How `gameId` was decided — `hashtag` or `streamer`.
+     *
+     * Kept because "tagged as Cabal Mobile" and "assumed to be Cabal Mobile,
+     * because that is what this streamer mostly covers" are different claims,
+     * and a report that blurs them is quietly overstating its own precision.
+     */
+    gameSource: text("game_source"),
+
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -652,6 +668,10 @@ export const videos = pgTable(
 
     /** When the comments edge was last walked. Null means never. See `posts`. */
     commentsSyncedAt: timestamp("comments_synced_at", { withTimezone: true }),
+
+    /** Resolved game attribution. See `posts.gameId`. */
+    gameId: uuid("game_id").references((): AnyPgColumn => games.id, { onDelete: "set null" }),
+    gameSource: text("game_source"),
 
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1052,5 +1072,99 @@ export const pageMetricsDaily = pgTable(
     uniqueIndex("page_metrics_daily_streamer_date_key").on(table.streamerId, table.metricDate),
     index("page_metrics_daily_streamer_date_idx").on(table.streamerId, table.metricDate.desc()),
     index("page_metrics_daily_date_idx").on(table.metricDate.desc()),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// games
+// ---------------------------------------------------------------------------
+
+/**
+ * A title the roster streams.
+ *
+ * Exists so "how is Cabal Mobile doing" is answerable. Without it every post is
+ * filed only under the person who wrote it, and a question about the game has
+ * to be answered by reading post text.
+ */
+export const games = pgTable(
+  "games",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    name: text("name").notNull(),
+    /** Stable, URL-safe handle. Survives a rename of the display name. */
+    slug: text("slug").notNull(),
+
+    active: boolean("active").notNull().default(true),
+    notes: text("notes"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("games_slug_key").on(table.slug),
+    uniqueIndex("games_name_lower_key").on(sql`lower(${table.name})`),
+    check("games_name_not_blank_check", sql`length(btrim(${table.name})) > 0`),
+    check("games_slug_format_check", sql`${table.slug} ~ '^[a-z0-9][a-z0-9-]*$'`),
+  ],
+);
+
+/**
+ * A hashtag that identifies a game in post text.
+ *
+ * Stored normalised — lower case, no leading `#` — because Facebook hashtags
+ * are case-insensitive and storing both spellings would make matching depend on
+ * how somebody typed it.
+ *
+ * Globally unique, not unique per game: a tag mapping to two games would leave
+ * the resolver guessing which one a post is about.
+ */
+export const gameHashtags = pgTable(
+  "game_hashtags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+
+    tag: text("tag").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("game_hashtags_tag_key").on(table.tag),
+    index("game_hashtags_game_idx").on(table.gameId),
+    check("game_hashtags_format_check", sql`${table.tag} ~ '^[a-z0-9_]+$'`),
+  ],
+);
+
+/**
+ * Which games a streamer covers, and which one to assume.
+ *
+ * The fallback exists because measurement said it had to: 102 of 1,624 posts
+ * carry any hashtag. Attribution by tag alone would leave most of the roster
+ * unfilterable, so an untagged post inherits the streamer's primary game.
+ */
+export const streamerGames = pgTable(
+  "streamer_games",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    streamerId: uuid("streamer_id")
+      .notNull()
+      .references(() => streamers.id, { onDelete: "cascade" }),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+
+    /** The game an untagged post is assumed to be about. One per streamer. */
+    isPrimary: boolean("is_primary").notNull().default(false),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("streamer_games_unique").on(table.streamerId, table.gameId),
+    index("streamer_games_game_idx").on(table.gameId),
   ],
 );

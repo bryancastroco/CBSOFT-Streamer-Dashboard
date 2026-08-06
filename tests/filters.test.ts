@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBrowseHref, resolveBrowseQuery } from "@/lib/filters/browse";
+import { UNFILED_GAME, buildBrowseHref, resolveBrowseQuery } from "@/lib/filters/browse";
 import {
   DEFAULT_PERIOD,
   PERIOD_PRESETS,
@@ -295,6 +295,36 @@ describe("browse query", () => {
   it("caps an absurd offset instead of passing it to the database", () => {
     expect(resolve({ offset: "999999999999" }).offset).toBe(0);
   });
+
+  /*
+   * The game filter has three states and the third is the one worth pinning.
+   * `undefined` and `UNFILED_GAME` mean opposite things — "every game" and "no
+   * game at all" — and a resolver that collapsed the sentinel back to undefined
+   * would answer the first question when the reader asked the second.
+   */
+  describe("the game filter", () => {
+    it("reads a game id", () => {
+      expect(resolve({ gameId: "8a1b2c3d-4e5f-4a6b-9c8d-7e6f5a4b3c2d" }).gameId).toBe(
+        "8a1b2c3d-4e5f-4a6b-9c8d-7e6f5a4b3c2d",
+      );
+    });
+
+    it("keeps the unfiled sentinel, which is a selection and not an absence", () => {
+      expect(resolve({ gameId: UNFILED_GAME }).gameId).toBe(UNFILED_GAME);
+    });
+
+    it("drops anything that is neither", () => {
+      expect(resolve({ gameId: "not-a-uuid" }).gameId).toBeUndefined();
+      expect(resolve({}).gameId).toBeUndefined();
+    });
+
+    it("cannot collide with a real id", () => {
+      // The sentinel is not a uuid, so no game can ever be named `none`.
+      expect(UNFILED_GAME).not.toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+    });
+  });
 });
 
 describe("href building", () => {
@@ -359,6 +389,37 @@ describe("href building", () => {
     const rolled = buildBrowseHref("/posts", custom, defaultSort, { period: "7d" });
     expect(rolled).not.toContain("from=");
     expect(rolled).not.toContain("to=");
+  });
+
+  it("carries a game filter, and clears it when given null", () => {
+    const withGame = resolveBrowseQuery({
+      raw: { gameId: "8a1b2c3d-4e5f-4a6b-9c8d-7e6f5a4b3c2d" },
+      sortKeys,
+      defaultSort,
+      now: NOW,
+    });
+
+    // Preserved across an unrelated change — this is what stops a sort header
+    // from silently widening the selection the reader made.
+    expect(buildBrowseHref("/posts", withGame, defaultSort, { sort: "shares" })).toContain(
+      "gameId=8a1b2c3d-4e5f-4a6b-9c8d-7e6f5a4b3c2d",
+    );
+    expect(buildBrowseHref("/posts", withGame, defaultSort, { gameId: null })).not.toContain(
+      "gameId",
+    );
+
+    // The sentinel survives the round trip too. It has to: a link to
+    // "everything filed under no game" is one an admin shares.
+    const unfiled = resolveBrowseQuery({
+      raw: { gameId: UNFILED_GAME },
+      sortKeys,
+      defaultSort,
+      now: NOW,
+    });
+    const href = buildBrowseHref("/posts", unfiled, defaultSort, {});
+    const raw = Object.fromEntries(new URL(href, "https://example.test").searchParams);
+
+    expect(resolveBrowseQuery({ raw, sortKeys, defaultSort, now: NOW }).gameId).toBe(UNFILED_GAME);
   });
 
   it("appends to a base path that already has a query string", () => {

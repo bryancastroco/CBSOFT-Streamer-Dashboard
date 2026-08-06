@@ -4,6 +4,7 @@ import { and, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
 import { contentMetricsCurrent, posts, videos } from "@/lib/db/schema";
+import { gameClause } from "@/lib/db/game-filter";
 import { tsParam } from "@/lib/db/params";
 
 import type { AggregatedMetric } from "@/lib/metrics/groups";
@@ -160,6 +161,8 @@ export type MetricPeriod = { from: Date | null; to: Date | null };
 
 export type MetricTotalsFilters = {
   streamerId?: string | undefined;
+  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  gameId?: string | undefined;
   period?: MetricPeriod | undefined;
   /** Restrict to posts or to videos. Omit for both. */
   contentType?: "post" | "video" | undefined;
@@ -197,6 +200,17 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
    * the whole statement with it.
    */
   const publishedAt = sql`coalesce(${posts.createdTime}, ${videos.createdTime})`;
+
+  /*
+   * Attribution likewise comes from whichever content row this metric belongs
+   * to. `content_metrics_current` carries no `game_id` of its own — deliberately,
+   * because attribution changes when a hashtag is edited and the rollup runs on
+   * its own schedule. Reading it through the join means a re-filed post is
+   * counted under its new game on the next render, not the next rollup.
+   */
+  const attributedGame = sql`coalesce(${posts.gameId}, ${videos.gameId})`;
+  const game = gameClause(attributedGame, filters.gameId);
+  if (game) clauses.push(game);
 
   if (filters.period?.from) {
     clauses.push(sql`${publishedAt} >= ${tsParam(filters.period.from)}::timestamptz`);
@@ -399,6 +413,7 @@ export async function countContentWithoutMetrics(
       .where(
         and(
           filters.streamerId ? eq(table.streamerId, filters.streamerId) : undefined,
+          gameClause(table.gameId, filters.gameId),
           filters.period?.from
             ? sql`${table.createdTime} >= ${tsParam(filters.period.from)}::timestamptz`
             : undefined,

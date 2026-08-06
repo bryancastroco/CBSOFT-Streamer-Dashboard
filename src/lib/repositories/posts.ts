@@ -17,7 +17,8 @@ import {
 } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
-import { commentSummaries, postInsights, posts, streamers } from "@/lib/db/schema";
+import { gameClause } from "@/lib/db/game-filter";
+import { commentSummaries, games, postInsights, posts, streamers } from "@/lib/db/schema";
 import type { PostSortKey, SortState } from "@/lib/filters/sorting";
 import type { NormalizedInsight, NormalizedPost } from "@/lib/meta/posts";
 
@@ -47,6 +48,10 @@ export type PostListItem = {
 
 /** A row of the posts table, which needs more than the post itself. */
 export type PostTableItem = PostListItem & {
+  /** The game it is filed under. Null means no attribution was resolved. */
+  gameName: string | null;
+  /** `hashtag` or `streamer` — how that attribution was decided. */
+  gameSource: string | null;
   /** How many insight metrics Meta actually returned for this post. */
   metricCount: number;
   /** From the stored analysis, when one exists. Null means never analysed. */
@@ -82,9 +87,23 @@ const metricCountExpression = sql<number>`(
   select count(*)::int from ${postInsights} where ${postInsights.postId} = ${posts.id}
 )`;
 
+/**
+ * The game this post was filed under, by name.
+ *
+ * A correlated subquery rather than a fourth join, for the same reason the
+ * metric count is one: the table already joins two tables and adding a third
+ * for a single label is not worth the plan. Null means unattributed, which the
+ * table renders as its own state rather than as a blank.
+ */
+const gameNameExpression = sql<string | null>`(
+  select g.name from ${games} g where g.id = ${posts.gameId}
+)`;
+
 /** Columns the table view adds on top of the post row itself. */
 const TABLE_COLUMNS = {
   ...LIST_COLUMNS,
+  gameName: gameNameExpression,
+  gameSource: posts.gameSource,
   metricCount: metricCountExpression,
   sentiment: commentSummaries.sentiment,
   summaryStatus: commentSummaries.status,
@@ -247,6 +266,8 @@ export async function upsertPostInsights(params: {
 
 export type ListPostsFilters = {
   streamerId?: string | undefined;
+  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  gameId?: string | undefined;
   search?: string | undefined;
   from?: Date | null;
   to?: Date | null;
@@ -283,6 +304,10 @@ export async function listPosts(
   const conditions: SQL[] = [];
 
   if (filters.streamerId) conditions.push(eq(posts.streamerId, filters.streamerId));
+
+  const game = gameClause(posts.gameId, filters.gameId);
+  if (game) conditions.push(game);
+
   if (filters.from) conditions.push(gte(posts.createdTime, filters.from));
   if (filters.to) conditions.push(lte(posts.createdTime, filters.to));
 

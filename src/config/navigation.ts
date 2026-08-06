@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bot,
   FileText,
+  Gamepad2,
   History,
   LayoutDashboard,
   MessagesSquare,
@@ -125,6 +126,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Users,
         description: "Accounts, roles and the audit trail behind role changes.",
         permission: "users.manage",
+      },
+      {
+        title: "Games",
+        href: "/admin/games",
+        icon: Gamepad2,
+        description: "Game titles, their hashtags, and which streamer covers what.",
+        permission: "settings.manage",
       },
       {
         title: "Facebook API",

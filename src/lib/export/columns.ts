@@ -38,6 +38,11 @@ export const POST_EXPORT_COLUMNS: readonly CsvColumn<PostTableItem>[] = [
   { header: "Facebook post id", value: (row) => row.facebookPostId },
   { header: "Created time (UTC)", value: (row) => row.createdTime },
   { header: "Message", value: (row) => row.message },
+  // Both the label and how it was decided. A campaign report that says "Cabal
+  // Mobile" is only auditable if the reader can tell which rows earned that from
+  // their own hashtag and which inherited it from the streamer.
+  { header: "Game", value: (row) => row.gameName },
+  { header: "Game matched by", value: (row) => row.gameSource },
   { header: "Reactions", value: (row) => countOrBlank(row.reactionCount) },
   { header: "Comments", value: (row) => countOrBlank(row.commentCount) },
   { header: "Shares", value: (row) => countOrBlank(row.shareCount) },
@@ -59,6 +64,8 @@ export const VIDEO_EXPORT_COLUMNS: readonly CsvColumn<VideoTableItem>[] = [
   { header: "Created time (UTC)", value: (row) => row.createdTime },
   { header: "Title", value: (row) => row.title },
   { header: "Description", value: (row) => row.description },
+  { header: "Game", value: (row) => row.gameName },
+  { header: "Game matched by", value: (row) => row.gameSource },
   // Both forms: the seconds are what a spreadsheet can compute with, the
   // formatted duration is what a person reads.
   { header: "Length (seconds)", value: (row) => row.lengthSeconds },

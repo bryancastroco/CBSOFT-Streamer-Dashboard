@@ -47,6 +47,7 @@ import {
 } from "@/lib/repositories/dashboard";
 import { getMetricTotals } from "@/lib/repositories/canonical-metrics";
 import { getCommentOverview } from "@/lib/repositories/comment-overview";
+import { listGameOptions } from "@/lib/repositories/games";
 import { getSyncLogTotals, listSyncLogs } from "@/lib/repositories/sync-logs";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 
@@ -78,6 +79,7 @@ function filtersFrom(params: RawParams): DashboardFilters {
 
   return {
     streamerId: query.streamerId,
+    gameId: query.gameId,
     period: { from: query.period.from, to: query.period.to },
     scope: query.scope,
   };
@@ -276,6 +278,7 @@ async function CanonicalMetrics({ params }: { params: RawParams }) {
 
   const totals = await getMetricTotals({
     streamerId: filters.streamerId,
+    gameId: filters.gameId,
     period: filters.period,
     ...(filters.scope === "posts"
       ? { contentType: "post" as const }
@@ -344,10 +347,11 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<RawParams>;
 }) {
-  const [user, params, streamerOptions] = await Promise.all([
+  const [user, params, streamerOptions, gameOptions] = await Promise.all([
     requireUser(),
     searchParams,
     listStreamerOptions(),
+    listGameOptions(),
   ]);
 
   const query = resolveBrowseQuery({ raw: params, sortKeys: SORT_KEYS, defaultSort: DEFAULT_SORT });
@@ -389,7 +393,7 @@ export default async function DashboardPage({
         query={query}
         basePath="/dashboard"
         defaultSort={DEFAULT_SORT}
-        options={{ streamers: streamerOptions }}
+        options={{ streamers: streamerOptions, games: gameOptions }}
       />
 
       {/*

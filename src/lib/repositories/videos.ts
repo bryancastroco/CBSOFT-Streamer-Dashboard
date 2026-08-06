@@ -17,7 +17,8 @@ import {
 } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
-import { commentSummaries, streamers, videoInsights, videos } from "@/lib/db/schema";
+import { gameClause } from "@/lib/db/game-filter";
+import { commentSummaries, games, streamers, videoInsights, videos } from "@/lib/db/schema";
 import type { SortState, VideoSortKey } from "@/lib/filters/sorting";
 import type { NormalizedInsight } from "@/lib/meta/posts";
 import type { NormalizedVideo } from "@/lib/meta/videos";
@@ -61,6 +62,10 @@ const LIST_COLUMNS = {
 
 /** A row of the videos table. */
 export type VideoTableItem = VideoListItem & {
+  /** The game it is filed under. Null means no attribution was resolved. */
+  gameName: string | null;
+  /** `hashtag` or `streamer` — how that attribution was decided. */
+  gameSource: string | null;
   /** How many insight metrics Meta actually returned for this video. */
   metricCount: number;
   sentiment: string | null;
@@ -72,8 +77,15 @@ const metricCountExpression = sql<number>`(
   select count(*)::int from ${videoInsights} where ${videoInsights.videoId} = ${videos.id}
 )`;
 
+/** See the note on the same expression in `repositories/posts.ts`. */
+const gameNameExpression = sql<string | null>`(
+  select g.name from ${games} g where g.id = ${videos.gameId}
+)`;
+
 const TABLE_COLUMNS = {
   ...LIST_COLUMNS,
+  gameName: gameNameExpression,
+  gameSource: videos.gameSource,
   metricCount: metricCountExpression,
   sentiment: commentSummaries.sentiment,
   summaryStatus: commentSummaries.status,
@@ -204,6 +216,8 @@ export async function upsertVideoInsights(params: {
 
 export type ListVideosFilters = {
   streamerId?: string | undefined;
+  /** A game id, or `UNFILED_GAME` for content attributed to nothing. */
+  gameId?: string | undefined;
   search?: string | undefined;
   from?: Date | null;
   to?: Date | null;
@@ -233,6 +247,10 @@ export async function listVideos(
   const conditions: SQL[] = [];
 
   if (filters.streamerId) conditions.push(eq(videos.streamerId, filters.streamerId));
+
+  const game = gameClause(videos.gameId, filters.gameId);
+  if (game) conditions.push(game);
+
   if (filters.from) conditions.push(gte(videos.createdTime, filters.from));
   if (filters.to) conditions.push(lte(videos.createdTime, filters.to));
 
