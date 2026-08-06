@@ -47,9 +47,9 @@ import {
 } from "@/lib/repositories/dashboard";
 import { getMetricTotals } from "@/lib/repositories/canonical-metrics";
 import { getCommentOverview } from "@/lib/repositories/comment-overview";
-import { listGameOptions } from "@/lib/repositories/games";
 import { getSyncLogTotals, listSyncLogs } from "@/lib/repositories/sync-logs";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
+import { getGameFilterView } from "@/lib/services/game-filter-view";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -60,8 +60,8 @@ export const metadata: Metadata = { title: "Dashboard" };
  * pre-aggregated metric tables, and a reader should not wait on it to see the
  * headline figures.
  */
-async function Conversation({ params }: { params: RawParams }) {
-  const overview = await getCommentOverview(filtersFrom(params));
+async function Conversation({ params, defaultGameId }: SectionProps) {
+  const overview = await getCommentOverview(filtersFrom(params, defaultGameId));
   return <CommentOverviewPanel overview={overview} />;
 }
 
@@ -74,8 +74,23 @@ const SORT_KEYS = ["none"] as const;
 type SortKey = (typeof SORT_KEYS)[number];
 const DEFAULT_SORT: SortState<SortKey> = { key: "none", direction: "desc" };
 
-function filtersFrom(params: RawParams): DashboardFilters {
-  const query = resolveBrowseQuery({ raw: params, sortKeys: SORT_KEYS, defaultSort: DEFAULT_SORT });
+/**
+ * What every section needs to resolve the same filters.
+ *
+ * `defaultGameId` travels with `params` rather than being read inside
+ * `filtersFrom`, because deciding it needs a database round trip and each
+ * section is its own Suspense boundary — resolving it per section would be six
+ * identical queries to answer one question the page already asked.
+ */
+type SectionProps = { params: RawParams; defaultGameId: string | undefined };
+
+function filtersFrom(params: RawParams, defaultGameId: string | undefined): DashboardFilters {
+  const query = resolveBrowseQuery({
+    raw: params,
+    sortKeys: SORT_KEYS,
+    defaultSort: DEFAULT_SORT,
+    defaultGameId,
+  });
 
   return {
     streamerId: query.streamerId,
@@ -93,8 +108,8 @@ function filtersFrom(params: RawParams): DashboardFilters {
  * streamers and token health describe the present, not the period, so a
  * period-over-period change would be a category error.
  */
-async function Metrics({ params }: { params: RawParams }) {
-  const filters = filtersFrom(params);
+async function Metrics({ params, defaultGameId }: SectionProps) {
+  const filters = filtersFrom(params, defaultGameId);
   const { current, previous } = await getMetricsComparison(filters);
 
   return (
@@ -172,8 +187,8 @@ async function Metrics({ params }: { params: RawParams }) {
 }
 
 /** Engagement, publishing mix and the leaders — four charts, not eight. */
-async function Performance({ params }: { params: RawParams }) {
-  const filters = filtersFrom(params);
+async function Performance({ params, defaultGameId }: SectionProps) {
+  const filters = filtersFrom(params, defaultGameId);
   const [series, top] = await Promise.all([getTimeSeries(filters), getTopStreamers(filters)]);
 
   if (series.length === 0) {
@@ -233,8 +248,8 @@ async function Performance({ params }: { params: RawParams }) {
   );
 }
 
-async function Sentiment({ params }: { params: RawParams }) {
-  const filters = filtersFrom(params);
+async function Sentiment({ params, defaultGameId }: SectionProps) {
+  const filters = filtersFrom(params, defaultGameId);
   const slices = await getSentimentDistribution(filters);
   const analysed = slices.reduce((sum, slice) => sum + slice.count, 0);
 
@@ -273,8 +288,8 @@ async function Sentiment({ params }: { params: RawParams }) {
  * them. Every total carries its own denominator, because a sum over the subset
  * Meta happened to report is not the roster's figure.
  */
-async function CanonicalMetrics({ params }: { params: RawParams }) {
-  const filters = filtersFrom(params);
+async function CanonicalMetrics({ params, defaultGameId }: SectionProps) {
+  const filters = filtersFrom(params, defaultGameId);
 
   const totals = await getMetricTotals({
     streamerId: filters.streamerId,
@@ -301,8 +316,8 @@ async function CanonicalMetrics({ params }: { params: RawParams }) {
   );
 }
 
-async function Operations({ params, isAdmin }: { params: RawParams; isAdmin: boolean }) {
-  const filters = filtersFrom(params);
+async function Operations({ params, defaultGameId, isAdmin }: SectionProps & { isAdmin: boolean }) {
+  const filters = filtersFrom(params, defaultGameId);
 
   const [issues, tokens, syncTotals, recentRuns] = await Promise.all([
     listUrgentIssues(filters),
@@ -337,8 +352,8 @@ async function Operations({ params, isAdmin }: { params: RawParams; isAdmin: boo
   );
 }
 
-async function Recent({ params }: { params: RawParams }) {
-  const rows = await listRecentContent(filtersFrom(params));
+async function Recent({ params, defaultGameId }: SectionProps) {
+  const rows = await listRecentContent(filtersFrom(params, defaultGameId));
   return <RecentContent rows={rows} />;
 }
 
@@ -347,14 +362,19 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<RawParams>;
 }) {
-  const [user, params, streamerOptions, gameOptions] = await Promise.all([
+  const [user, params, streamerOptions, gameFilter] = await Promise.all([
     requireUser(),
     searchParams,
     listStreamerOptions(),
-    listGameOptions(),
+    getGameFilterView(),
   ]);
 
-  const query = resolveBrowseQuery({ raw: params, sortKeys: SORT_KEYS, defaultSort: DEFAULT_SORT });
+  const query = resolveBrowseQuery({
+    raw: params,
+    sortKeys: SORT_KEYS,
+    defaultSort: DEFAULT_SORT,
+    defaultGameId: gameFilter.defaultGameId,
+  });
   const isAdmin = user.role === "admin";
 
   /*
@@ -393,7 +413,12 @@ export default async function DashboardPage({
         query={query}
         basePath="/dashboard"
         defaultSort={DEFAULT_SORT}
-        options={{ streamers: streamerOptions, games: gameOptions }}
+        options={{
+          streamers: streamerOptions,
+          games: gameFilter.games,
+          showAllContent: gameFilter.showAllContent,
+          showUnregistered: gameFilter.showUnregistered,
+        }}
       />
 
       {/*
@@ -401,7 +426,7 @@ export default async function DashboardPage({
        * hold back the headline figures most readers came for.
        */}
       <Suspense key={`m-${key}`} fallback={<CardSkeleton count={8} />}>
-        <Metrics params={params} />
+        <Metrics params={params} defaultGameId={gameFilter.defaultGameId} />
       </Suspense>
 
       <section className="space-y-3">
@@ -410,7 +435,7 @@ export default async function DashboardPage({
           description="Every comment in the current selection, pooled into one reading. Written by the configured AI provider and cached against the content it covers, so changing a filter and coming back costs nothing. Falls back to an in-process count when no provider is available."
         />
         <Suspense key={`co-${key}`} fallback={<CardSkeleton count={1} />}>
-          <Conversation params={params} />
+          <Conversation params={params} defaultGameId={gameFilter.defaultGameId} />
         </Suspense>
       </section>
 
@@ -420,14 +445,14 @@ export default async function DashboardPage({
           description="Meta's own figures, grouped. Each total says how much of the content it covers — a metric Meta did not report is excluded, never counted as zero."
         />
         <Suspense key={`c-${key}`} fallback={<CardSkeleton count={3} />}>
-          <CanonicalMetrics params={params} />
+          <CanonicalMetrics params={params} defaultGameId={gameFilter.defaultGameId} />
         </Suspense>
       </section>
 
       <section className="space-y-3">
         <SectionHeader title="Performance overview" />
         <Suspense key={`p-${key}`} fallback={<CardSkeleton count={3} />}>
-          <Performance params={params} />
+          <Performance params={params} defaultGameId={gameFilter.defaultGameId} />
         </Suspense>
       </section>
 
@@ -435,17 +460,17 @@ export default async function DashboardPage({
         <section className="min-w-0 space-y-3 lg:col-span-2">
           <SectionHeader title="Recent content" description="The newest posts and videos." />
           <Suspense key={`r-${key}`} fallback={<TableSkeleton rows={5} />}>
-            <Recent params={params} />
+            <Recent params={params} defaultGameId={gameFilter.defaultGameId} />
           </Suspense>
         </section>
 
         <Suspense key={`s-${key}`} fallback={<CardSkeleton count={1} />}>
-          <Sentiment params={params} />
+          <Sentiment params={params} defaultGameId={gameFilter.defaultGameId} />
         </Suspense>
       </div>
 
       <Suspense key={`o-${key}`} fallback={<CardSkeleton count={3} />}>
-        <Operations params={params} isAdmin={isAdmin} />
+        <Operations params={params} defaultGameId={gameFilter.defaultGameId} isAdmin={isAdmin} />
       </Suspense>
     </>
   );

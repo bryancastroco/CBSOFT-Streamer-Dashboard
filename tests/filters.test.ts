@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { ANY_GAME, UNFILED_GAME, buildBrowseHref, resolveBrowseQuery } from "@/lib/filters/browse";
+import {
+  ALL_CONTENT,
+  ANY_GAME,
+  UNFILED_GAME,
+  buildBrowseHref,
+  resolveBrowseQuery,
+} from "@/lib/filters/browse";
 import {
   DEFAULT_PERIOD,
   PERIOD_PRESETS,
@@ -314,25 +320,53 @@ describe("browse query", () => {
       expect(resolve({ gameId: UNFILED_GAME }).gameId).toBe(UNFILED_GAME);
     });
 
-    it("keeps no filter distinct from every registered game", () => {
-      // The whole reason the default entry exists. If these collapsed, landing
-      // on /posts would hide everything the catalogue does not reach.
+    it("substitutes the screen's default when the URL says nothing", () => {
+      const withDefault = resolveBrowseQuery({
+        raw: {},
+        sortKeys,
+        defaultSort,
+        now: NOW,
+        defaultGameId: ANY_GAME,
+      });
+
+      expect(withDefault.gameId).toBe(ANY_GAME);
+      expect(withDefault.defaultGameId).toBe(ANY_GAME);
+    });
+
+    it("lets an explicit choice override the default, including the wide one", () => {
+      const explicit = (gameId: string) =>
+        resolveBrowseQuery({
+          raw: { gameId },
+          sortKeys,
+          defaultSort,
+          now: NOW,
+          defaultGameId: ANY_GAME,
+        }).gameId;
+
+      // `ALL_CONTENT` exists precisely for this: with a filtering default,
+      // "show me everything" has to be sayable, and absence no longer says it.
+      expect(explicit(ALL_CONTENT)).toBe(ALL_CONTENT);
+      expect(explicit(UNFILED_GAME)).toBe(UNFILED_GAME);
+    });
+
+    it("falls back to no filter when the screen has no default", () => {
+      // What a workspace with no registered game gets. `ANY_GAME` would match
+      // nothing there, so every screen would render empty.
       expect(resolve({}).gameId).toBeUndefined();
-      expect(resolve({}).gameId).not.toBe(ANY_GAME);
     });
 
     it("drops anything that is none of them", () => {
       expect(resolve({ gameId: "not-a-uuid" }).gameId).toBeUndefined();
-      expect(resolve({ gameId: "all" }).gameId).toBeUndefined();
+      expect(resolve({ gameId: "every" }).gameId).toBeUndefined();
     });
 
     it("cannot collide with a real id", () => {
-      // Neither sentinel is a uuid, so no game can ever be named `any` or `none`.
+      // No sentinel is a uuid, so no game can be named `all`, `any` or `none`.
       const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const sentinels = [ALL_CONTENT, ANY_GAME, UNFILED_GAME];
 
-      expect(ANY_GAME).not.toMatch(uuid);
-      expect(UNFILED_GAME).not.toMatch(uuid);
-      expect(ANY_GAME).not.toBe(UNFILED_GAME);
+      for (const sentinel of sentinels) expect(sentinel).not.toMatch(uuid);
+      expect(new Set(sentinels).size).toBe(sentinels.length);
     });
   });
 });
@@ -399,6 +433,26 @@ describe("href building", () => {
     const rolled = buildBrowseHref("/posts", custom, defaultSort, { period: "7d" });
     expect(rolled).not.toContain("from=");
     expect(rolled).not.toContain("to=");
+  });
+
+  it("leaves the screen's default out of the link, and writes anything else in", () => {
+    const onDefault = resolveBrowseQuery({
+      raw: {},
+      sortKeys,
+      defaultSort,
+      now: NOW,
+      defaultGameId: ANY_GAME,
+    });
+
+    // Sitting on the default produces a clean URL, so `/posts` and the link
+    // copied from it stay the same page.
+    expect(buildBrowseHref("/posts", onDefault, defaultSort, {})).toBe("/posts");
+
+    // Choosing the wider view is a departure from the default and must survive
+    // the next navigation — the reason `ALL_CONTENT` is a token at all.
+    expect(buildBrowseHref("/posts", onDefault, defaultSort, { gameId: ALL_CONTENT })).toContain(
+      `gameId=${ALL_CONTENT}`,
+    );
   });
 
   it("carries a game filter, and clears it when given null", () => {

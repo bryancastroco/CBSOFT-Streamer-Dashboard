@@ -7,7 +7,13 @@ import { Loader2, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ANY_GAME, UNFILED_GAME, buildBrowseHref, type BrowseQuery } from "@/lib/filters/browse";
+import {
+  ALL_CONTENT,
+  ANY_GAME,
+  UNFILED_GAME,
+  buildBrowseHref,
+  type BrowseQuery,
+} from "@/lib/filters/browse";
 import {
   CONTENT_SCOPES,
   CONTENT_SCOPE_LABELS,
@@ -54,6 +60,15 @@ export type FilterBarOptions = {
    * until an admin has configured one.
    */
   games?: readonly { id: string; name: string }[];
+  /**
+   * Offer "All content" — the unfiltered view.
+   *
+   * Off by default. An admin turns it on from Admin → Games when the workspace
+   * still has content outside the catalogue that people need to reach.
+   */
+  showAllContent?: boolean;
+  /** Offer "Not registered games". Same setting, same reasoning. */
+  showUnregistered?: boolean;
   /**
    * Hide the streamer picker on a screen that is already one streamer.
    *
@@ -134,10 +149,15 @@ export function FilterBar<K extends string>({
     query.period.preset !== DEFAULT_PERIOD ||
     query.scope !== "all" ||
     query.streamerId !== undefined ||
-    query.gameId !== undefined ||
+    // Against the screen's default, not against undefined. Where the default
+    // is itself a filter, sitting on it is not "filtered" — offering Reset
+    // there would promise a change that clicking it does not produce.
+    query.gameId !== query.defaultGameId ||
     query.search !== undefined;
 
   const games = options.games ?? [];
+  const showAllContent = options.showAllContent ?? false;
+  const showUnregistered = options.showUnregistered ?? false;
 
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -228,14 +248,21 @@ export function FilterBar<K extends string>({
               onChange={(event) => go({ gameId: event.target.value || null })}
             >
               {/*
-               * "All content" is the unfiltered default and sits first because
-               * that is what the page shows on load. It is deliberately NOT the
-               * same as "All games": once a game is registered, making the
-               * default mean "any registered game" would drop every
-               * unattributed post from every screen without a word — on the
-               * current data, 1,617 rows out of 1,624.
+               * The two set-valued entries are opt-in, from Admin → Games.
+               *
+               * Off, the control reads as a list of games and lands on the
+               * catalogue: this dashboard is about games, and content outside
+               * the catalogue is a configuration problem rather than something
+               * to browse. On, it regains the wider views — which is what a
+               * workspace mid-setup needs, where most of the archive is still
+               * unattributed and every figure on screen is a fraction of the
+               * truth.
+               *
+               * Which of those a workspace is in is not something this code can
+               * tell, so it is the admin's to say.
                */}
-              <option value="">All content</option>
+              {showAllContent ? <option value={ALL_CONTENT}>All content</option> : null}
+
               <option value={ANY_GAME}>All games</option>
               {games.map((game) => (
                 <option key={game.id} value={game.id}>
@@ -244,22 +271,19 @@ export function FilterBar<K extends string>({
               ))}
 
               {/*
-               * "Not registered games" is not offered here — it is a
-               * configuration view, not a reading view. A reader asking about
-               * Cabal Mobile has no use for the pile of content nobody has
-               * classified yet, and on a roster mid-setup that pile is most of
-               * the archive: an inviting entry that answers a question nobody
-               * asked. Admin → Games links to it, beside the count that makes
-               * it worth clicking.
-               *
-               * It still renders when it is the *current* selection, so an
-               * admin who arrived by that link sees where they are and can
-               * leave. A `<select>` whose value matches no option shows a blank
-               * or silently displays the wrong one — a control lying about the
-               * rows underneath it.
+               * Rendered when hidden but currently selected — Admin → Games
+               * links straight to this view, and an admin arriving that way
+               * must see where they are. A `<select>` whose value matches no
+               * option shows a blank or silently displays a neighbour, which is
+               * a control lying about the rows underneath it.
                */}
-              {query.gameId === UNFILED_GAME ? (
+              {showUnregistered || query.gameId === UNFILED_GAME ? (
                 <option value={UNFILED_GAME}>Not registered games</option>
+              ) : null}
+
+              {/* Same reasoning, for a link that predates the setting. */}
+              {!showAllContent && query.gameId === ALL_CONTENT ? (
+                <option value={ALL_CONTENT}>All content</option>
               ) : null}
             </select>
           </div>

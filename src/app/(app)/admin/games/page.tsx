@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Users } from "lucide-react";
 
+import { GameFilterOptionsCard } from "@/app/(app)/admin/games/filter-options-card";
 import { GamesManager } from "@/app/(app)/admin/games/game-forms";
 import { PageHeader } from "@/components/layout/page-header";
 import { CardSkeleton } from "@/components/layout/states";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireAdmin } from "@/lib/auth/guards";
 import { UNFILED_GAME } from "@/lib/filters/browse";
+import { getGameFilterOptions } from "@/lib/repositories/app-settings";
 import { countUnattributedContent, listGames } from "@/lib/repositories/games";
 
 export const metadata: Metadata = { title: "Games" };
@@ -37,10 +39,22 @@ export const dynamic = "force-dynamic";
  */
 
 async function Registry() {
-  const [games, unattributed] = await Promise.all([listGames(), countUnattributedContent()]);
+  const [games, unattributed, filterOptions] = await Promise.all([
+    listGames(),
+    countUnattributedContent(),
+    getGameFilterOptions(),
+  ]);
 
   return (
     <>
+      {/*
+       * Above the registry, because it governs what every other screen shows
+       * and is the first thing to check when the numbers look small.
+       */}
+      {games.length > 0 ? (
+        <GameFilterOptionsCard options={filterOptions} unattributed={unattributed} />
+      ) : null}
+
       {games.length > 0 && unattributed > 0 ? (
         <Card>
           <CardHeader>

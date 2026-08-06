@@ -11,20 +11,29 @@ import { Card, CardContent } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/guards";
 import { buildBrowseHref, resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
 import { POST_SORT_KEYS } from "@/lib/filters/sorting";
-import { listGameOptions } from "@/lib/repositories/games";
 import { listPosts } from "@/lib/repositories/posts";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
+import { getGameFilterView } from "@/lib/services/game-filter-view";
 
 export const metadata: Metadata = { title: "Posts" };
 export const dynamic = "force-dynamic";
 
 const BASE_PATH = "/posts";
 
-async function PostsPanel({ params, showGames }: { params: RawParams; showGames: boolean }) {
+async function PostsPanel({
+  params,
+  showGames,
+  defaultGameId,
+}: {
+  params: RawParams;
+  showGames: boolean;
+  defaultGameId: string | undefined;
+}) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: POST_SORT_KEYS,
     defaultSort: POSTS_DEFAULT_SORT,
+    defaultGameId,
   });
 
   const { items, total } = await listPosts({
@@ -41,7 +50,7 @@ async function PostsPanel({ params, showGames }: { params: RawParams; showGames:
   const isFiltered =
     query.search !== undefined ||
     query.streamerId !== undefined ||
-    query.gameId !== undefined ||
+    query.gameId !== query.defaultGameId ||
     query.period.preset !== "all";
 
   return (
@@ -94,12 +103,16 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
   await requireUser();
 
   const params = await searchParams;
+  const [streamers, gameFilter] = await Promise.all([listStreamerOptions(), getGameFilterView()]);
+
+  // Resolved after the view, because the default it substitutes depends on what
+  // that call found: with no game registered there is nothing to default to.
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: POST_SORT_KEYS,
     defaultSort: POSTS_DEFAULT_SORT,
+    defaultGameId: gameFilter.defaultGameId,
   });
-  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   return (
     <>
@@ -114,7 +127,9 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
         defaultSort={POSTS_DEFAULT_SORT}
         options={{
           streamers,
-          games,
+          games: gameFilter.games,
+          showAllContent: gameFilter.showAllContent,
+          showUnregistered: gameFilter.showUnregistered,
           showScope: false,
           searchPlaceholder: "Message, post id or streamer…",
         }}
@@ -135,7 +150,11 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
           </Card>
         }
       >
-        <PostsPanel params={params} showGames={games.length > 0} />
+        <PostsPanel
+          params={params}
+          showGames={gameFilter.games.length > 0}
+          defaultGameId={gameFilter.defaultGameId}
+        />
       </Suspense>
     </>
   );

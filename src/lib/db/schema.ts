@@ -1168,3 +1168,26 @@ export const streamerGames = pgTable(
     index("streamer_games_game_idx").on(table.gameId),
   ],
 );
+
+/**
+ * Workspace preferences an admin sets from the interface.
+ *
+ * Distinct from everything on `/admin/general`, which is read-only and lives in
+ * the environment so a deployment is reproducible from its variables alone.
+ * Nothing here changes what a query computes — these decide what the interface
+ * offers. Anything that changes a stored number belongs in env instead.
+ *
+ * `valueJson` is unvalidated by the database on purpose; every read parses it
+ * through a Zod schema that supplies defaults, so an unknown or malformed row
+ * degrades to the default rather than breaking a page.
+ */
+export const appSettings = pgTable("app_settings", {
+  /** Namespaced, e.g. `game_filter.options`. A check constraint enforces the shape. */
+  key: text("key").primaryKey(),
+
+  valueJson: jsonb("value_json").notNull(),
+
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Kept after the author leaves — the setting outlives the account. */
+  updatedBy: uuid("updated_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+});

@@ -53,7 +53,6 @@ import {
 } from "@/lib/filters/sorting";
 import { EXPECTED_SCOPES } from "@/lib/meta/token-status";
 import { listCommentAnalyses } from "@/lib/repositories/analysis";
-import { listGameOptions } from "@/lib/repositories/games";
 import { getStreamerOverview, type MetricTotal } from "@/lib/repositories/metrics";
 import { getPageGrowth } from "@/lib/repositories/page-growth";
 import { listPosts } from "@/lib/repositories/posts";
@@ -65,6 +64,7 @@ import {
   listSyncRunsForStreamer,
 } from "@/lib/repositories/streamers";
 import { listVideos } from "@/lib/repositories/videos";
+import { getGameFilterView } from "@/lib/services/game-filter-view";
 import { streamerIdSchema } from "@/lib/validation/streamers";
 
 export const metadata: Metadata = { title: "Streamer" };
@@ -106,11 +106,20 @@ function totalCard(total: MetricTotal): { value: string; hint: string } {
 // Tabs
 // ---------------------------------------------------------------------------
 
-async function OverviewTab({ streamerId, params }: { streamerId: string; params: RawParams }) {
+async function OverviewTab({
+  streamerId,
+  params,
+  defaultGameId,
+}: {
+  streamerId: string;
+  params: RawParams;
+  defaultGameId: string | undefined;
+}) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: ["none"] as const,
     defaultSort: { key: "none", direction: "desc" },
+    defaultGameId,
   });
 
   const [overview, growth] = await Promise.all([
@@ -202,16 +211,19 @@ async function PostsTab({
   params,
   basePath,
   showGames,
+  defaultGameId,
 }: {
   streamerId: string;
   params: RawParams;
   basePath: string;
   showGames: boolean;
+  defaultGameId: string | undefined;
 }) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: POST_SORT_KEYS,
     defaultSort: POSTS_DEFAULT_SORT,
+    defaultGameId,
   });
 
   const { items, total } = await listPosts({
@@ -273,16 +285,19 @@ async function VideosTab({
   params,
   basePath,
   showGames,
+  defaultGameId,
 }: {
   streamerId: string;
   showGames: boolean;
   params: RawParams;
   basePath: string;
+  defaultGameId: string | undefined;
 }) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: VIDEO_SORT_KEYS,
     defaultSort: VIDEOS_DEFAULT_SORT,
+    defaultGameId,
   });
 
   const { items, total } = await listVideos({
@@ -343,15 +358,18 @@ async function AnalysisTab({
   streamerId,
   params,
   basePath,
+  defaultGameId,
 }: {
   streamerId: string;
   params: RawParams;
   basePath: string;
+  defaultGameId: string | undefined;
 }) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: ANALYSIS_SORT_KEYS,
     defaultSort: ANALYSIS_DEFAULT_SORT,
+    defaultGameId,
   });
 
   const { items, total } = await listCommentAnalyses({
@@ -722,13 +740,16 @@ export default async function StreamerDetailPage({
   const raw = await searchParams;
   const tab = resolveStreamerTab(raw["tab"], admin);
 
+  const [streamers, gameFilter] = await Promise.all([listStreamerOptions(), getGameFilterView()]);
+
+  // After the view, because the default it substitutes depends on what that
+  // call found: with no game registered there is nothing to default to.
   const query = resolveBrowseQuery({
     raw,
     sortKeys: ["none"] as const,
     defaultSort: { key: "none", direction: "desc" } as SortState<"none">,
+    defaultGameId: gameFilter.defaultGameId,
   });
-
-  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   /**
    * Tab links carry the filters. `basePath` keeps `?tab=` so a sort or a page
@@ -809,7 +830,9 @@ export default async function StreamerDetailPage({
           defaultSort={{ key: "none", direction: "desc" }}
           options={{
             streamers,
-            games,
+            games: gameFilter.games,
+            showAllContent: gameFilter.showAllContent,
+            showUnregistered: gameFilter.showUnregistered,
             // Every tab here is already this one streamer, and the picker did
             // nothing — see `showStreamer` in FilterBar.
             showStreamer: false,
@@ -821,13 +844,20 @@ export default async function StreamerDetailPage({
       ) : null}
 
       <Suspense key={`${tab}-${JSON.stringify(raw)}`} fallback={FALLBACKS[tab]}>
-        {tab === "overview" ? <OverviewTab streamerId={streamer.id} params={raw} /> : null}
+        {tab === "overview" ? (
+          <OverviewTab
+            streamerId={streamer.id}
+            params={raw}
+            defaultGameId={gameFilter.defaultGameId}
+          />
+        ) : null}
         {tab === "posts" ? (
           <PostsTab
             streamerId={streamer.id}
             params={raw}
             basePath={basePath}
-            showGames={games.length > 0}
+            showGames={gameFilter.games.length > 0}
+            defaultGameId={gameFilter.defaultGameId}
           />
         ) : null}
         {tab === "videos" ? (
@@ -835,11 +865,17 @@ export default async function StreamerDetailPage({
             streamerId={streamer.id}
             params={raw}
             basePath={basePath}
-            showGames={games.length > 0}
+            showGames={gameFilter.games.length > 0}
+            defaultGameId={gameFilter.defaultGameId}
           />
         ) : null}
         {tab === "analysis" ? (
-          <AnalysisTab streamerId={streamer.id} params={raw} basePath={basePath} />
+          <AnalysisTab
+            streamerId={streamer.id}
+            params={raw}
+            basePath={basePath}
+            defaultGameId={gameFilter.defaultGameId}
+          />
         ) : null}
         {tab === "sync" ? <SyncHistoryTab streamerId={streamer.id} /> : null}
         {tab === "settings" ? <SettingsTab streamerId={streamer.id} /> : null}

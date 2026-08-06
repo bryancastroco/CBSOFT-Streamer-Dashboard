@@ -12,19 +12,26 @@ import { requireUser } from "@/lib/auth/guards";
 import { buildBrowseHref, resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
 import { ANALYSIS_SORT_KEYS } from "@/lib/filters/sorting";
 import { listCommentAnalyses } from "@/lib/repositories/analysis";
-import { listGameOptions } from "@/lib/repositories/games";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
+import { getGameFilterView } from "@/lib/services/game-filter-view";
 
 export const metadata: Metadata = { title: "Comment analysis" };
 export const dynamic = "force-dynamic";
 
 const BASE_PATH = "/comment-analysis";
 
-async function AnalysisPanel({ params }: { params: RawParams }) {
+async function AnalysisPanel({
+  params,
+  defaultGameId,
+}: {
+  params: RawParams;
+  defaultGameId: string | undefined;
+}) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: ANALYSIS_SORT_KEYS,
     defaultSort: ANALYSIS_DEFAULT_SORT,
+    defaultGameId,
   });
 
   const { items, total } = await listCommentAnalyses({
@@ -85,12 +92,15 @@ export default async function CommentAnalysisPage({
   await requireUser();
 
   const params = await searchParams;
+  const [streamers, gameFilter] = await Promise.all([listStreamerOptions(), getGameFilterView()]);
+
+  // Resolved after the view: the default depends on whether any game exists.
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: ANALYSIS_SORT_KEYS,
     defaultSort: ANALYSIS_DEFAULT_SORT,
+    defaultGameId: gameFilter.defaultGameId,
   });
-  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   return (
     <>
@@ -103,7 +113,13 @@ export default async function CommentAnalysisPage({
         query={query}
         basePath={BASE_PATH}
         defaultSort={ANALYSIS_DEFAULT_SORT}
-        options={{ streamers, games, searchPlaceholder: "Summary text, content title or streamer…" }}
+        options={{
+          streamers,
+          games: gameFilter.games,
+          showAllContent: gameFilter.showAllContent,
+          showUnregistered: gameFilter.showUnregistered,
+          searchPlaceholder: "Summary text, content title or streamer…",
+        }}
       />
 
       <Suspense
@@ -116,7 +132,7 @@ export default async function CommentAnalysisPage({
           </Card>
         }
       >
-        <AnalysisPanel params={params} />
+        <AnalysisPanel params={params} defaultGameId={gameFilter.defaultGameId} />
       </Suspense>
     </>
   );

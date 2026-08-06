@@ -18,32 +18,44 @@ src/lib/filters/browse.ts   the combined resolver + the href builder
 `sort`, `dir` and `offset` out of the query string. `buildBrowseHref` writes them back, changing
 only what it is given.
 
-**`gameId` has four states, and only one of them names a game.**
+**`gameId` has five inputs, and only one of them names a game.**
 
 | Value | Means | Predicate |
 |---|---|---|
-| absent | no filter — all content, filed or not | none |
+| absent | the screen's default — see below | (whatever that resolves to) |
+| `all` (`ALL_CONTENT`) | everything, filed or not | none |
 | `any` (`ANY_GAME`) | anything under a registered game | `game_id is not null` |
 | a uuid | that one game | `game_id = $1` |
 | `none` (`UNFILED_GAME`) | anything under no registered game | `game_id is null` |
 
-All four render through the single `gameClause` helper in `src/lib/db/game-filter.ts`. Neither
-sentinel is a uuid, so neither can collide with a real id, and `any` / `none` partition the content
-between them.
+All of them render through the single `gameClause` helper in `src/lib/db/game-filter.ts`. No
+sentinel is a uuid, so none can collide with a real id; `any` and `none` partition the content
+between them, and `all` is their union.
 
-**Absent is deliberately not the same as `any`.** Collapsing them — making the unfiltered default
-mean "any registered game" — would drop every unattributed post from every screen the moment a
-first game is registered. On the current data that is 1,617 rows out of 1,624, with nothing about
-it that looks like an error. The filter bar therefore offers *All content* (absent) above *All
-games* (`any`) rather than merging the two.
+**The default is `any` once a game is registered.** `resolveBrowseQuery` takes a `defaultGameId` and
+substitutes it when the URL says nothing, so every screen lands on the catalogue. The value is
+decided once, server-side, by `getGameFilterView` in `src/lib/services/game-filter-view.ts` — a page
+cannot compute it because it depends on how many games exist and on a stored preference.
 
-**`none` is resolvable but not offered.** The filter bar lists *All content*, *All games* and each
-game; it does not list *Not registered games*, because that answers a configuration question rather
-than a reading one, and on a roster mid-setup it is most of the archive. Admin → Games links to it
-beside the count that makes it worth opening. The option does render when it is the *current*
-selection — a `<select>` whose value matches no option shows a blank or the wrong one, which is a
-control lying about the rows beneath it. Resolution is unchanged either way: `resolveBrowseQuery`
-accepts `none` from any source, since the rows behind it are ones the viewer can already see.
+**With no game registered the default is nothing at all.** `any` would match no rows there, so every
+screen would render empty on a fresh workspace with nothing on it resembling a cause. That is
+`defaultGameSelection`, a correctness property rather than a preference, and it is not exposed as a
+setting.
+
+**`all` needs its own token because absence stopped meaning it.** Once the default filters, "show me
+everything" has to be sayable out loud — otherwise choosing it produces a URL indistinguishable from
+choosing nothing, and the filter springs back on the next navigation. `buildBrowseHref` omits
+`gameId` only when it equals `query.defaultGameId`, which is what keeps a default-state link clean
+while still writing a departure into it.
+
+**Which entries the control offers is an admin setting.** `app_settings.game_filter.options` holds
+two booleans, both false by default, so the control reads as a list of games. Admin → Games turns
+either back on. Resolution is deliberately unaffected: `resolveBrowseQuery` accepts every token from
+any source regardless of the preference, because the rows behind them are ones a viewer can already
+read elsewhere — this governs what the interface leads people towards, not what they may see. A
+hidden entry still renders when it is the *current* selection, since a `<select>` whose value
+matches no option shows a blank or the wrong one, which is a control lying about the rows beneath
+it.
 
 Nothing else constructs a URL. Every sort header, page button, filter control, tab link and export
 link routes through `buildBrowseHref`, which is what makes it impossible for one control to drop a

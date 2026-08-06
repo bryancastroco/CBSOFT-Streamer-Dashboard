@@ -40,6 +40,10 @@ vi.mock("@/lib/db", () => ({
 const { resolveContentGames } = await import("@/lib/services/resolve-games");
 const { listPosts } = await import("@/lib/repositories/posts");
 const { getStreamerOverview } = await import("@/lib/repositories/metrics");
+const { getGameFilterOptions, setGameFilterOptions } = await import(
+  "@/lib/repositories/app-settings"
+);
+const { defaultGameSelection } = await import("@/lib/services/game-filter-view");
 const { ANY_GAME, UNFILED_GAME } = await import("@/lib/filters/browse");
 
 let client: PGlite;
@@ -482,5 +486,132 @@ describe("the streamer overview honours a game", () => {
     const unfiled = await getStreamerOverview({ streamerId, gameId: UNFILED_GAME });
 
     expect(unfiled.postCount).toBe(1);
+  });
+});
+
+/**
+ * The workspace preference behind the two wide filter entries.
+ *
+ * Worth testing against a real Postgres rather than mocking the read, because
+ * the interesting cases are all about a row that is absent or wrong — and those
+ * are exactly what a mock would paper over.
+ */
+describe("the game filter preference", () => {
+  let actorId: string;
+
+  beforeAll(async () => {
+    /*
+     * Through `auth.users`, not `public.users`. The public row is created by
+     * the `handle_new_auth_user` trigger and its id is a foreign key to the
+     * auth table, so inserting directly there fails the constraint.
+     *
+     * Created once rather than per test, because `audit_logs` refuses DELETE —
+     * the append-only trigger is the property that makes the trail worth having
+     * — and a user that has written an entry can no longer be removed.
+     */
+    const user = await client.query<{ id: string }>(
+      `insert into auth.users (email) values ('settings-admin@example.test') returning id`,
+    );
+    actorId = user.rows[0]!.id;
+  });
+
+  beforeEach(async () => {
+    await client.query("delete from app_settings");
+  });
+
+  it("defaults to hiding both when nothing has been saved", async () => {
+    // The common case: a workspace that has never opened the setting. It must
+    // read as the documented default rather than as an error.
+    expect(await getGameFilterOptions()).toEqual({
+      showAllContent: false,
+      showUnregistered: false,
+    });
+  });
+
+  it("round-trips a saved preference", async () => {
+    await setGameFilterOptions({
+      actorId,
+      options: { showAllContent: true, showUnregistered: false },
+    });
+
+    expect(await getGameFilterOptions()).toEqual({
+      showAllContent: true,
+      showUnregistered: false,
+    });
+  });
+
+  it("overwrites rather than accumulating rows", async () => {
+    await setGameFilterOptions({
+      actorId,
+      options: { showAllContent: true, showUnregistered: true },
+    });
+    await setGameFilterOptions({
+      actorId,
+      options: { showAllContent: false, showUnregistered: false },
+    });
+
+    const rows = await client.query<{ n: number }>(`select count(*)::int as n from app_settings`);
+
+    expect(rows.rows[0]!.n).toBe(1);
+    expect(await getGameFilterOptions()).toEqual({
+      showAllContent: false,
+      showUnregistered: false,
+    });
+  });
+
+  it("degrades to the default on a row it cannot read", async () => {
+    // A row written by another version, or edited by hand. A dropdown is not
+    // worth a 500, so the unreadable preference reads as the safe one.
+    await client.query(
+      `insert into app_settings (key, value_json)
+       values ('game_filter.options', '{"showAllContent":"yes"}'::jsonb)`,
+    );
+
+    expect(await getGameFilterOptions()).toEqual({
+      showAllContent: false,
+      showUnregistered: false,
+    });
+  });
+
+  it("records the change with both halves of it", async () => {
+    await setGameFilterOptions({
+      actorId,
+      options: { showAllContent: true, showUnregistered: true },
+    });
+
+    // Newest first, and not asserted to be the only one: the trail is
+    // append-only, so earlier tests in this file have left their own entries.
+    const entry = await client.query<{ entity_id: string; metadata_json: unknown }>(
+      `select entity_id, metadata_json from audit_logs
+        where action = 'setting.updated'
+        order by created_at desc limit 1`,
+    );
+
+    expect(entry.rows[0]!.entity_id).toBe("game_filter.options");
+
+    // Before and after, because "who turned this off, and from what" is
+    // answerable only if the trail records the previous value too.
+    const metadata = entry.rows[0]!.metadata_json as { previous: unknown; next: unknown };
+    expect(metadata.previous).toEqual({ showAllContent: false, showUnregistered: false });
+    expect(metadata.next).toEqual({ showAllContent: true, showUnregistered: true });
+  });
+});
+
+/**
+ * The one rule that is not a preference.
+ *
+ * With an empty catalogue, defaulting to "every registered game" selects
+ * nothing — so every screen would render empty on a fresh workspace, with
+ * nothing visible resembling a cause. Pinned here because it is the kind of
+ * safety clause a later simplification removes for looking redundant.
+ */
+describe("the default selection", () => {
+  it("is the catalogue once a game exists", () => {
+    expect(defaultGameSelection(1)).toBe(ANY_GAME);
+    expect(defaultGameSelection(12)).toBe(ANY_GAME);
+  });
+
+  it("is no filter at all when nothing is registered", () => {
+    expect(defaultGameSelection(0)).toBeUndefined();
   });
 });

@@ -127,6 +127,13 @@
       "when": 1786180000000,
       "tag": "0017_phase26_games",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786190000000,
+      "tag": "0018_phase27_app_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -47,6 +47,16 @@ export const AUDIT_ACTIONS = {
   gameDeleted: "game.deleted",
   streamerGamesChanged: "streamer.games_changed",
 
+  /**
+   * A workspace preference changed from the interface.
+   *
+   * Worth recording even though nothing it controls changes a stored number.
+   * Hiding an option from a filter changes what every later reader sees by
+   * default, and "the dashboard has been showing a fraction of the archive
+   * since Tuesday" needs a Tuesday to point at.
+   */
+  settingUpdated: "setting.updated",
+
   // Phase 4 — synchronisation
   postsSynced: "posts.synced",
 
@@ -90,6 +100,7 @@ export const AUDIT_ENTITY_TYPES = {
   post: "post",
   video: "video",
   game: "game",
+  setting: "setting",
 } as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[keyof typeof AUDIT_ENTITY_TYPES];
@@ -116,6 +127,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.gameUpdated]: "Game updated",
   [AUDIT_ACTIONS.gameDeleted]: "Game deleted",
   [AUDIT_ACTIONS.streamerGamesChanged]: "Streamer games changed",
+  [AUDIT_ACTIONS.settingUpdated]: "Setting changed",
   [AUDIT_ACTIONS.postsSynced]: "Posts synchronised",
   [AUDIT_ACTIONS.commentsSynced]: "Comments synchronised",
   [AUDIT_ACTIONS.commentsSummarized]: "Comments summarised",

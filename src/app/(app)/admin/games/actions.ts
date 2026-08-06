@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import type { ActionState } from "@/lib/forms/action-state";
 import { AuthorizationError, assertAdmin } from "@/lib/auth/guards";
+import { setGameFilterOptions } from "@/lib/repositories/app-settings";
 import { deleteGame, saveGame, setStreamerGames } from "@/lib/repositories/games";
 import { resolveContentGames } from "@/lib/services/resolve-games";
 import { gameFormSchema, streamerGamesSchema } from "@/lib/validation/games";
@@ -150,6 +151,45 @@ export async function deleteGameAction(
   revalidateGameSurfaces();
 
   return { status: "success", message: `${outcome.data.name} deleted. Its content was kept.` };
+}
+
+/**
+ * Which wide entries the Game control offers.
+ *
+ * Booleans arrive as the strings a hidden input carries — a shadcn Switch is a
+ * button and submits nothing of its own. Compared against `"true"` rather than
+ * coerced, so anything unexpected reads as off, which is the safe direction:
+ * an entry that fails to appear is visible, one that appears unbidden is not.
+ */
+export async function setGameFilterOptionsAction(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const actor = await requireActor();
+  if (isActionState(actor)) return actor;
+
+  const options = {
+    showAllContent: formData.get("showAllContent") === "true",
+    showUnregistered: formData.get("showUnregistered") === "true",
+  };
+
+  await setGameFilterOptions({ actorId: actor.id, options });
+
+  // Every screen with a filter bar, because the control is on all of them.
+  revalidateGameSurfaces();
+
+  const shown = [
+    options.showAllContent ? "All content" : null,
+    options.showUnregistered ? "Not registered games" : null,
+  ].filter((label): label is string => label !== null);
+
+  return {
+    status: "success",
+    message:
+      shown.length > 0
+        ? `Saved. The Game filter now also offers ${shown.join(" and ")}.`
+        : "Saved. The Game filter now offers registered games only.",
+  };
 }
 
 export async function setStreamerGamesAction(

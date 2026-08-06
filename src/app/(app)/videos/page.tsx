@@ -11,20 +11,29 @@ import { Card, CardContent } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/guards";
 import { buildBrowseHref, resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
 import { VIDEO_SORT_KEYS } from "@/lib/filters/sorting";
-import { listGameOptions } from "@/lib/repositories/games";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 import { listVideos } from "@/lib/repositories/videos";
+import { getGameFilterView } from "@/lib/services/game-filter-view";
 
 export const metadata: Metadata = { title: "Videos" };
 export const dynamic = "force-dynamic";
 
 const BASE_PATH = "/videos";
 
-async function VideosPanel({ params, showGames }: { params: RawParams; showGames: boolean }) {
+async function VideosPanel({
+  params,
+  showGames,
+  defaultGameId,
+}: {
+  params: RawParams;
+  showGames: boolean;
+  defaultGameId: string | undefined;
+}) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: VIDEO_SORT_KEYS,
     defaultSort: VIDEOS_DEFAULT_SORT,
+    defaultGameId,
   });
 
   const { items, total } = await listVideos({
@@ -41,7 +50,7 @@ async function VideosPanel({ params, showGames }: { params: RawParams; showGames
   const isFiltered =
     query.search !== undefined ||
     query.streamerId !== undefined ||
-    query.gameId !== undefined ||
+    query.gameId !== query.defaultGameId ||
     query.period.preset !== "all";
 
   return (
@@ -88,12 +97,15 @@ export default async function VideosPage({ searchParams }: { searchParams: Promi
   await requireUser();
 
   const params = await searchParams;
+  const [streamers, gameFilter] = await Promise.all([listStreamerOptions(), getGameFilterView()]);
+
+  // Resolved after the view: the default depends on whether any game exists.
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: VIDEO_SORT_KEYS,
     defaultSort: VIDEOS_DEFAULT_SORT,
+    defaultGameId: gameFilter.defaultGameId,
   });
-  const [streamers, games] = await Promise.all([listStreamerOptions(), listGameOptions()]);
 
   return (
     <>
@@ -108,7 +120,9 @@ export default async function VideosPage({ searchParams }: { searchParams: Promi
         defaultSort={VIDEOS_DEFAULT_SORT}
         options={{
           streamers,
-          games,
+          games: gameFilter.games,
+          showAllContent: gameFilter.showAllContent,
+          showUnregistered: gameFilter.showUnregistered,
           showScope: false,
           searchPlaceholder: "Title, description, video id or streamer…",
         }}
@@ -124,7 +138,11 @@ export default async function VideosPage({ searchParams }: { searchParams: Promi
           </Card>
         }
       >
-        <VideosPanel params={params} showGames={games.length > 0} />
+        <VideosPanel
+          params={params}
+          showGames={gameFilter.games.length > 0}
+          defaultGameId={gameFilter.defaultGameId}
+        />
       </Suspense>
     </>
   );

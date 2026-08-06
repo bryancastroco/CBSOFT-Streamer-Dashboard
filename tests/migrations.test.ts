@@ -33,6 +33,10 @@ describe("migrations apply cleanly", () => {
     );
 
     expect(found.map((r) => r.table_name)).toEqual([
+      // Workspace preferences set from the interface — migration 0018. Distinct
+      // from `/admin/general`, which stays read-only and env-backed: nothing
+      // here changes what a query computes, only what the interface offers.
+      "app_settings",
       "audit_logs",
       // Cached roster-level readings, keyed by the content they cover, so a
       // dashboard re-render does not bill for the same answer twice.

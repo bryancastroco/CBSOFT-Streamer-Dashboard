@@ -38,35 +38,46 @@ function first(value: string | string[] | undefined): string | undefined {
  * length-capped because it becomes an `ILIKE '%…%'` pattern.
  */
 /**
- * The two set-valued selections, alongside "a specific game".
+ * The three set-valued selections, alongside "a specific game".
  *
- * The filter has four states, and only two of them name a single game:
- *
- *   undefined     every piece of content, filed or not — no filter
+ *   ALL_CONTENT   every piece of content, filed or not — no predicate
  *   ANY_GAME      anything attributed to a registered game
  *   a uuid        that one game
  *   UNFILED_GAME  anything attributed to nothing
  *
- * `ANY_GAME` and `UNFILED_GAME` partition the content between them, which is
- * what makes the pair worth having: "how is the registered catalogue doing"
- * and "what is still falling outside it" are the two questions an operator
- * actually asks, and neither is answerable by listing games one at a time.
+ * `ANY_GAME` and `UNFILED_GAME` partition the content between them, and
+ * `ALL_CONTENT` is their union. Those are the questions an operator actually
+ * asks of a catalogue — how is what I registered doing, what is still falling
+ * outside it, and show me everything — none of which is answerable by listing
+ * games one at a time.
  *
- * `undefined` is kept distinct from `ANY_GAME` deliberately. Collapsing them —
- * making the default mean "any registered game" — would hide every unattributed
- * post the moment a first game is registered, which on this data set is 1,617 of
- * 1,624. A page that silently drops 99% of its rows on load is the worst
- * failure this product can have, because nothing about it looks like an error.
+ * ## Why "no filter" needs a token of its own
  *
- * Neither sentinel is a uuid, so neither can collide with a real game id.
+ * It did not, while absence meant it. Once the default became `ANY_GAME`,
+ * absence means "the default" and the unfiltered view needs a way to be said
+ * out loud — otherwise selecting it produces a URL indistinguishable from
+ * having selected nothing, and the filter springs back on the next navigation.
+ *
+ * `undefined` therefore no longer means "everything"; it means "whatever this
+ * screen defaults to", which `resolveBrowseQuery` substitutes. Keeping the two
+ * distinct is what lets `buildBrowseHref` omit the default from a URL while
+ * still writing a non-default choice into it.
+ *
+ * None of the three is a uuid, so none can collide with a real game id.
  */
+export const ALL_CONTENT = "all";
 export const ANY_GAME = "any";
 export const UNFILED_GAME = "none";
 
 const primitivesSchema = z.object({
   streamerId: z.uuid().optional().catch(undefined),
   gameId: z
-    .union([z.uuid(), z.literal(ANY_GAME), z.literal(UNFILED_GAME)])
+    .union([
+      z.uuid(),
+      z.literal(ALL_CONTENT),
+      z.literal(ANY_GAME),
+      z.literal(UNFILED_GAME),
+    ])
     .optional()
     .catch(undefined),
   search: z.string().trim().min(1).max(200).optional().catch(undefined),
@@ -87,9 +98,21 @@ export type BrowseQuery<K extends string> = {
    * The slug stays a display and lookup concern.
    *
    * `ANY_GAME` selects everything filed under a registered game;
-   * `UNFILED_GAME` selects everything filed under none.
+   * `UNFILED_GAME` selects everything filed under none; `ALL_CONTENT` selects
+   * both.
+   *
+   * Always the *effective* selection — the default has already been
+   * substituted, so a consumer never has to know what the screen falls back to.
    */
   gameId: string | undefined;
+  /**
+   * What `gameId` falls back to when the URL says nothing.
+   *
+   * Carried on the query so `buildBrowseHref` can leave the default out of the
+   * link. Without it every URL would carry `?gameId=any`, and `/posts` would
+   * stop being the same page as the one a reader copied from it.
+   */
+  defaultGameId: string | undefined;
   search: string | undefined;
   sort: SortState<K>;
   offset: number;
@@ -102,6 +125,14 @@ export function resolveBrowseQuery<K extends string>(params: {
   defaultSort: SortState<K>;
   limit?: number;
   now?: Date;
+  /**
+   * What to select when the URL names no game.
+   *
+   * Supplied by the caller because it depends on state this pure module cannot
+   * see: which games exist, and what the workspace has been configured to
+   * offer. See `resolveGameFilter` on the server side, which decides it once.
+   */
+  defaultGameId?: string | undefined;
 }): BrowseQuery<K> {
   const raw = params.raw;
 
@@ -121,7 +152,8 @@ export function resolveBrowseQuery<K extends string>(params: {
     }),
     scope: resolveContentScope(first(raw["scope"])),
     streamerId: primitives.streamerId,
-    gameId: primitives.gameId,
+    gameId: primitives.gameId ?? params.defaultGameId,
+    defaultGameId: params.defaultGameId,
     search: primitives.search,
     sort: resolveSort(params.sortKeys, params.defaultSort, {
       sort: first(raw["sort"]),
@@ -210,8 +242,15 @@ export function buildBrowseHref<K extends string>(
     overrides.streamerId !== undefined ? overrides.streamerId : (query.streamerId ?? null);
   if (streamerId) next.set("streamerId", streamerId);
 
+  /*
+   * Written only when it differs from the screen's default, like `period`.
+   *
+   * `null` from an override means "back to the default", not "no filter" —
+   * there is a token for that now (`ALL_CONTENT`), and conflating the two would
+   * make Reset unable to express itself on a screen whose default is a filter.
+   */
   const gameId = overrides.gameId !== undefined ? overrides.gameId : (query.gameId ?? null);
-  if (gameId) next.set("gameId", gameId);
+  if (gameId && gameId !== query.defaultGameId) next.set("gameId", gameId);
 
   const search = overrides.search !== undefined ? overrides.search : (query.search ?? null);
   if (search) next.set("search", search);
