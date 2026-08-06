@@ -134,6 +134,13 @@
       "when": 1786190000000,
       "tag": "0018_phase27_app_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0019_phase28_page_connections",
+      "breakpoints": true
     }
   ]
 }

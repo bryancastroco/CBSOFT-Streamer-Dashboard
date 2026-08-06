@@ -58,7 +58,9 @@ describe("the encrypted token column is confined", () => {
     //     at the door.
     //
     // Both are the opposite of a leak. Only `schema.ts` declares the column and
-    // only `repositories/streamers.ts` selects it.
+    // only `repositories/streamers.ts` selects it — including for a token the
+    // streamer connected themselves, which is why that flow writes through this
+    // repository rather than from its own service.
     expect(referencing.sort()).toEqual([
       "src/lib/automation/token-material.ts",
       "src/lib/db/schema.ts",
@@ -77,7 +79,26 @@ describe("the encrypted token column is confined", () => {
       if (/\bdecryptToken\s*\(/.test(source)) decrypting.push(rel(file));
     }
 
-    expect(decrypting).toEqual(["src/lib/repositories/streamers.ts"]);
+    /*
+     * Two entries, for two different credentials.
+     *
+     * `streamers.ts` decrypts the **Page** token — the one architecture rule 5
+     * is about, and still the only file that can.
+     *
+     * `page-connections.ts` decrypts the **user** token held between the OAuth
+     * callback and the streamer choosing a Page. It is a different secret with
+     * a different lifetime: fifteen minutes, cleared the moment a Page is
+     * attached, and it can only ever list the Pages that person administers.
+     *
+     * The rule this list enforces is not "one file" but "the file that stores a
+     * credential is the only one that reads it back". Widening it past that is
+     * a deliberate act to be argued for in review — a service or a route
+     * appearing here means a credential has escaped its repository.
+     */
+    expect(decrypting.sort()).toEqual([
+      "src/lib/repositories/page-connections.ts",
+      "src/lib/repositories/streamers.ts",
+    ]);
   });
 });
 

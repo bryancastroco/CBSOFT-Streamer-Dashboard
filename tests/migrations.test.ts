@@ -51,6 +51,10 @@ describe("migrations apply cleanly", () => {
       // one a post belongs to.
       "game_hashtags",
       "games",
+      // Invitations that let a streamer connect their own Page — migration
+      // 0019. Only the hash of the link is stored, so a database read is not
+      // enough to use one.
+      "page_connections",
       // Daily Page audience figures. `followers` is a running total,
       // `new_follows` that day's arrivals — see migration 0016.
       "page_metrics_daily",

@@ -67,6 +67,16 @@ const serverEnvSchema = z
       .string()
       .regex(/^v\d+\.\d+$/, "META_GRAPH_API_VERSION must look like v25.0")
       .default("v25.0"),
+    /**
+     * Facebook Login for Business configuration id, when one exists.
+     *
+     * Optional. With it, the permission set lives in a configuration in the app
+     * dashboard and the dialog is opened by id; without it, the classic flow
+     * sends the scope list inline. Both work — this exists so a workspace can
+     * adopt the newer flow without a code change, and so one that has not yet
+     * is not blocked on doing so.
+     */
+    META_LOGIN_CONFIG_ID: z.string().min(1).optional(),
 
     // Page-token encryption at rest
     TOKEN_ENCRYPTION_KEY: encryptionKeySchema,

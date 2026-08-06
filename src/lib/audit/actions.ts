@@ -57,6 +57,19 @@ export const AUDIT_ACTIONS = {
    */
   settingUpdated: "setting.updated",
 
+  /**
+   * Self-service Page connection.
+   *
+   * Kept apart from `token.added` even though a successful connection ends in
+   * one. The trail has to be able to answer "who did we invite, and who
+   * actually finished" — a question about the invitation, not about the
+   * credential it produced. `token.added` is still written alongside, by the
+   * same code path that records a manually entered token.
+   */
+  connectionInvited: "connection.invited",
+  connectionRevoked: "connection.revoked",
+  connectionCompleted: "connection.completed",
+
   // Phase 4 — synchronisation
   postsSynced: "posts.synced",
 
@@ -101,6 +114,7 @@ export const AUDIT_ENTITY_TYPES = {
   video: "video",
   game: "game",
   setting: "setting",
+  pageConnection: "page_connection",
 } as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[keyof typeof AUDIT_ENTITY_TYPES];
@@ -128,6 +142,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.gameDeleted]: "Game deleted",
   [AUDIT_ACTIONS.streamerGamesChanged]: "Streamer games changed",
   [AUDIT_ACTIONS.settingUpdated]: "Setting changed",
+  [AUDIT_ACTIONS.connectionInvited]: "Connection invited",
+  [AUDIT_ACTIONS.connectionRevoked]: "Connection revoked",
+  [AUDIT_ACTIONS.connectionCompleted]: "Page connected by streamer",
   [AUDIT_ACTIONS.postsSynced]: "Posts synchronised",
   [AUDIT_ACTIONS.commentsSynced]: "Comments synchronised",
   [AUDIT_ACTIONS.commentsSummarized]: "Comments summarised",

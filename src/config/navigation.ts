@@ -6,6 +6,7 @@ import {
   FileText,
   Gamepad2,
   History,
+  Link2 as LinkIcon,
   LayoutDashboard,
   MessagesSquare,
   Plug,
@@ -126,6 +127,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         icon: Users,
         description: "Accounts, roles and the audit trail behind role changes.",
         permission: "users.manage",
+      },
+      {
+        title: "Page connections",
+        href: "/admin/connections",
+        icon: LinkIcon,
+        description: "Invite streamers to connect their own Facebook Page.",
+        permission: "settings.manage",
       },
       {
         title: "Games",

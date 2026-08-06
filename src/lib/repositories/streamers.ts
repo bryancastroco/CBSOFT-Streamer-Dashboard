@@ -1144,3 +1144,92 @@ export async function listSyncRunsForStreamer(id: string, limit = 10) {
 }
 
 export type SyncRunRow = Awaited<ReturnType<typeof listSyncRunsForStreamer>>[number];
+
+/**
+ * Store a Page token obtained by the streamer themselves.
+ *
+ * Lives here rather than in the connect service for one reason:
+ * `encrypted_page_token` is confined to this file, and
+ * `tests/token-containment.test.ts` fails the build if it is written anywhere
+ * else. That confinement is worth more than the convenience of putting this
+ * beside the OAuth code — a Page token has exactly one place it can be stored,
+ * and reviewing that place is reviewing all of them.
+ *
+ * Creates the streamer when the invitation was not tied to one, updates it when
+ * it was. Validation happens in the caller, which already holds the plaintext
+ * from Meta; the verdict arrives here as a decided fact.
+ *
+ * The audit entry carries a null user. The streamer is not a dashboard account,
+ * and attributing this to whichever admin sent the link would record something
+ * that did not happen.
+ */
+export async function attachConnectedPageToken(params: {
+  streamerId: string | null;
+  fallbackName: string;
+  pageId: string;
+  pageName: string;
+  token: string;
+  validation: TokenValidation;
+}): Promise<string> {
+  const db = getDb();
+
+  const encrypted = encryptToken(params.token);
+  const lastFour = lastFourOf(params.token);
+
+  const tokenFields = {
+    encryptedPageToken: encrypted,
+    pageTokenLastFour: lastFour,
+    tokenStatus: params.validation.status,
+    tokenExpiresAt: params.validation.expiresAt,
+    tokenScopes: params.validation.scopes,
+    tokenLastValidatedAt: new Date(),
+    tokenValidationError: params.validation.status === "valid" ? null : params.validation.message,
+  };
+
+  return db.transaction(async (tx) => {
+    let id = params.streamerId;
+
+    if (id) {
+      await tx
+        .update(streamers)
+        .set({ ...tokenFields, pageName: params.pageName })
+        .where(eq(streamers.id, id));
+    } else {
+      /*
+       * `streamerCode` comes from the Page id, not the name.
+       *
+       * It has to be unique and stable, and two streamers may both be called
+       * "Blade". An admin renames it afterwards if they care — the code is a
+       * handle, not a display name, and a collision here would fail the insert
+       * on somebody else's behalf.
+       */
+      const [created] = await tx
+        .insert(streamers)
+        .values({
+          streamerCode: `FB${params.pageId.slice(-8)}`,
+          streamerName: params.fallbackName,
+          pageId: params.pageId,
+          pageName: params.pageName,
+          ...tokenFields,
+        })
+        .returning({ id: streamers.id });
+
+      id = created!.id;
+    }
+
+    await tx.insert(auditLogs).values({
+      userId: null,
+      action: AUDIT_ACTIONS.tokenAdded,
+      entityType: AUDIT_ENTITY_TYPES.streamer,
+      entityId: id,
+      metadataJson: {
+        via: "self_service_connection",
+        pageId: params.pageId,
+        lastFour,
+        tokenStatus: params.validation.status,
+      },
+    });
+
+    return id;
+  });
+}

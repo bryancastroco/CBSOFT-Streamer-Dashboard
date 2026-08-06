@@ -52,6 +52,22 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   // explanatory page that leaks nothing.
   { path: "/unauthorized", access: "public" },
 
+  /*
+   * Self-service Page connection.
+   *
+   * Public because the audience has no account and never will: these are
+   * streamers, invited by link, handing over access to their own Facebook Page.
+   * Requiring a dashboard login would mean creating an account for everyone we
+   * want a Page from, which is a larger grant than the thing being asked for.
+   *
+   * The invitation token in the path is the credential — high-entropy, stored
+   * only as a hash, single-use, expiring, revocable. What it authorises is
+   * narrow by construction: attach one Facebook Page that the holder already
+   * administers. It grants no read access to anything in this product.
+   */
+  { path: "/connect", access: "public" },
+  { path: "/api/connect", access: "public" },
+
   // Administrative surface.
   { path: "/admin", access: "admin" },
 

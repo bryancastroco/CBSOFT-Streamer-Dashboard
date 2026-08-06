@@ -1191,3 +1191,61 @@ export const appSettings = pgTable("app_settings", {
   /** Kept after the author leaves — the setting outlives the account. */
   updatedBy: uuid("updated_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
 });
+
+/**
+ * Invitations that let a streamer connect their own Page.
+ *
+ * Replaces walking somebody through Graph API Explorer and asking them to paste
+ * a live credential into a chat message. They approve a Facebook permission
+ * dialog; the Page token is fetched server-side and never shown to anyone.
+ *
+ * Only the hash of the invitation token is stored. The link is a bearer
+ * credential, so a database read must not be enough to use it.
+ */
+export const pageConnections = pgTable(
+  "page_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    /** SHA-256 of the raw token, hex. The raw value exists only in the link. */
+    tokenHash: text("token_hash").notNull(),
+
+    /** For the admin's own reference. Not an identity; nothing authenticates against it. */
+    inviteeLabel: text("invitee_label").notNull(),
+    inviteeEmail: text("invitee_email"),
+
+    /** Set when the invitation tops up an existing streamer rather than creating one. */
+    streamerId: uuid("streamer_id").references((): AnyPgColumn => streamers.id, {
+      onDelete: "set null",
+    }),
+
+    /** `pending` | `opened` | `connected` | `revoked`. Expiry is derived, not stored. */
+    status: text("status").notNull().default("pending"),
+
+    createdBy: uuid("created_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    connectedAt: timestamp("connected_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+
+    /** What they attached. Identity only — the token lives on the streamer row. */
+    connectedPageId: text("connected_page_id"),
+    connectedPageName: text("connected_page_name"),
+
+    /**
+     * The user access token, encrypted, held only between the OAuth callback
+     * and the Page choice, then cleared. Never leaves the server.
+     */
+    encryptedUserToken: text("encrypted_user_token"),
+    userTokenExpiresAt: timestamp("user_token_expires_at", { withTimezone: true }),
+
+    /** Last failure, for the admin table. Never contains token material. */
+    lastError: text("last_error"),
+  },
+  (table) => [
+    uniqueIndex("page_connections_token_hash_key").on(table.tokenHash),
+    index("page_connections_created_at_idx").on(table.createdAt.desc()),
+    index("page_connections_streamer_idx").on(table.streamerId),
+  ],
+);
