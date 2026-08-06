@@ -51,7 +51,27 @@ export function SyncAllButton() {
   }, [state]);
 
   return (
-    <form action={formAction}>
+    <form
+      action={formAction}
+      /*
+       * Says how long before the wait begins, not after.
+       *
+       * A sweep takes minutes — measured at 145 seconds for two streamers and
+       * 911 comments, and it grows with the roster. A spinner alone is
+       * indistinguishable from a hang for that long, and the honest reading of
+       * an unexplained two-minute spinner is that something broke. The first
+       * time this ran, the only way to tell working from stuck was to query the
+       * database.
+       *
+       * `onSubmit` rather than an effect on `pending`: it fires once, when the
+       * person acts, instead of on every render that happens to be pending.
+       */
+      onSubmit={() =>
+        toast.info("Syncing every streamer. This takes a few minutes — keep this tab open.", {
+          duration: 10_000,
+        })
+      }
+    >
       <Submit />
     </form>
   );
