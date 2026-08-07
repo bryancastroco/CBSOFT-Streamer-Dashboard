@@ -137,6 +137,7 @@ Rules:
 - Do not expose personal names. If a comment names someone, describe the role or omit the name — never reproduce it.
 - Do not quote comments verbatim at length. Summarise.
 - Write for a colleague reading a weekly report: plain, specific, no filler.
+- Write every field in English. The comments are mostly Tagalog, or Tagalog and English mixed, and gaming slang runs through both — carry the meaning across rather than repeating the original wording. Keep in-game proper nouns as they are written.
 
 Placeholders:
 - When a category has nothing worth reporting, return a single-item list containing exactly "${NO_SIGNIFICANT_FINDINGS}".

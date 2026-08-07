@@ -118,6 +118,19 @@ describe("prompt", () => {
     expect(prompt).toContain("do not expose personal names");
   });
 
+  it("names the output language, rather than hoping for it", () => {
+    const prompt = COMMENT_ANALYSIS_SYSTEM_PROMPT.toLowerCase();
+
+    /*
+     * The audience comments in Tagalog and English mixed. A model handed that
+     * will often answer in kind, and for a while this one did not only because
+     * the rest of the prompt is English — which is a coincidence, not a
+     * setting. The report is read in English, so the prompt says so.
+     */
+    expect(prompt).toContain("in english");
+    expect(prompt).toContain("tagalog");
+  });
+
   it("numbers comments so the model can be specific", () => {
     const built = buildCommentAnalysisPrompt(["first", "second"]);
 
