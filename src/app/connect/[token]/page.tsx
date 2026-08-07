@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
-import { BarChart3, MessageSquare, ShieldCheck } from "lucide-react";
+import { headers } from "next/headers";
+import { BarChart3, MessageSquare, ShieldCheck, SquareArrowOutUpRight } from "lucide-react";
+
+import { IN_APP_BROWSER_NOTICE, isInAppBrowser } from "@/lib/connect/in-app-browser";
 
 import { ConnectButton, NoPages, PagePicker } from "@/app/connect/[token]/page-picker";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,7 +80,9 @@ export default async function ConnectPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ token }, query] = await Promise.all([params, searchParams]);
+  const [{ token }, query, requestHeaders] = await Promise.all([params, searchParams, headers()]);
+
+  const inAppBrowser = isInAppBrowser(requestHeaders.get("user-agent"));
 
   const invitation = await findInvitationByToken(token);
 
@@ -202,6 +207,24 @@ export default async function ConnectPage({
                   </span>
                 </li>
               </ul>
+
+              {/*
+               * Above the button, not below it. Below, it is advice about a
+               * failure that has already happened; above, it is the difference
+               * between finishing and not.
+               *
+               * The button stays enabled underneath — see `in-app-browser.ts`
+               * for why this warns rather than blocks.
+               */}
+              {inAppBrowser ? (
+                <div
+                  role="alert"
+                  className="flex gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-500"
+                >
+                  <SquareArrowOutUpRight className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span>{IN_APP_BROWSER_NOTICE}</span>
+                </div>
+              ) : null}
 
               <ConnectButton token={token} />
 

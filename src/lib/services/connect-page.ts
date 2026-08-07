@@ -49,7 +49,20 @@ export async function listConnectablePages(
   connectionId: string,
 ): Promise<{ ok: true; pages: PageChoice[] } | { ok: false; message: string }> {
   const held = await readUserToken(connectionId);
-  if (!held.ok) return held;
+
+  /*
+   * Recorded, like every other refusal on this path.
+   *
+   * This one was returned bare, and it is the most common failure there is: the
+   * hold is fifteen minutes, and somebody who signs in, gets interrupted and
+   * comes back finds it gone. Six invitations sat at `opened` with `last_error`
+   * empty, which read as "never got past Facebook" — the opposite of what had
+   * happened. They had got past Facebook and then run out of time.
+   */
+  if (!held.ok) {
+    await recordError(connectionId, held.message);
+    return held;
+  }
 
   const result = await listManagedPages(held.token);
   if (!result.ok) {
@@ -78,7 +91,14 @@ export async function connectChosenPage(params: {
   pageId: string;
 }): Promise<ConnectOutcome> {
   const held = await readUserToken(params.connectionId);
-  if (!held.ok) return held;
+
+  // The hold lapsed between signing in and choosing. Recorded for the same
+  // reason as in `listConnectablePages`: an admin looking at a stalled
+  // invitation needs to know it got this far.
+  if (!held.ok) {
+    await recordError(params.connectionId, held.message);
+    return held;
+  }
 
   const listed = await listManagedPages(held.token);
   if (!listed.ok) {
@@ -96,6 +116,10 @@ export async function connectChosenPage(params: {
    */
   const chosen = listed.data.find((page) => page.id === params.pageId);
   if (!chosen) {
+    // Recorded too. Benign in the ordinary case — a stale tab listing a Page
+    // they have since left — but indistinguishable from a forged id without a
+    // record, and the admin should see which invitation it happened on.
+    await recordError(params.connectionId, "The chosen Page is not one this account manages.");
     return { ok: false, message: "That Page is not one your Facebook account manages." };
   }
 
