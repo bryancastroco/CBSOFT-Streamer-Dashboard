@@ -77,6 +77,31 @@ function otpTypeFrom(value: string | null): EmailOtpType | null {
   return ALLOWED_OTP_TYPES.has(value as EmailOtpType) ? (value as EmailOtpType) : null;
 }
 
+/**
+ * Did the visitor already get in?
+ *
+ * A one-time token is spent by the click that works. Clicking it a second time
+ * — a reload, a back button, tapping the link again in the chat it arrived in —
+ * fails, and the failure is indistinguishable from a link that never worked.
+ *
+ * Observed: an invitee opened her link, reached the password form, then tapped
+ * the link again two minutes later. Supabase answered `One-time token not
+ * found`, and this route sent her to sign in with "ask an administrator to
+ * send a new invitation" — asking an admin to fix something that had already
+ * succeeded, on an account whose password she still had not set.
+ *
+ * So a dead token is not conclusive on its own. If a valid session is already
+ * present, the honest reading is "you have used this, carry on", and the right
+ * destination is where the link was going anyway.
+ */
+async function alreadySignedIn(): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  // `getUser`, not `getSession`: this decides whether to admit somebody, and a
+  // cookie alone is not proof.
+  const { data, error } = await supabase.auth.getUser();
+  return !error && Boolean(data.user);
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const log = childLogger({ component: "auth.callback" });
@@ -103,6 +128,11 @@ export async function GET(request: Request) {
       hadUsableType: otpType !== null,
     });
 
+    if (await alreadySignedIn()) {
+      log.info("auth.callback.spent_but_signed_in", { reason, next });
+      redirect(next);
+    }
+
     redirect(`/login?reason=${reason}`);
   }
 
@@ -119,6 +149,13 @@ export async function GET(request: Request) {
       hasSession: Boolean(data?.session),
       method: tokenHash ? "token_hash" : "code",
     });
+
+    // The common case: the token was spent by the click that worked, and this
+    // is the same person clicking again. See `alreadySignedIn`.
+    if (await alreadySignedIn()) {
+      log.info("auth.callback.spent_but_signed_in", { reason: "exchange_failed", next });
+      redirect(next);
+    }
 
     redirect("/login?reason=link_invalid");
   }

@@ -217,6 +217,74 @@ describe("the callback accepts the shape email links actually arrive in", () => 
 });
 
 /**
+ * The second click.
+ *
+ * A one-time token is spent by the click that works, so clicking again fails —
+ * and the failure looks exactly like a link that never worked. Observed in
+ * production: an invitee opened her link, reached the password form, tapped the
+ * link again two minutes later, and was sent to sign in with "ask an
+ * administrator to send a new invitation" — for an account that had just
+ * succeeded and still had no password set.
+ *
+ * A dead token is therefore not conclusive on its own. A live session alongside
+ * it says the click already worked.
+ */
+describe("a spent link is not the same as a bad link", () => {
+  it("checks for an existing session before sending anyone to sign in", async () => {
+    const source = code(await readFile(SOURCE("app/(auth)/auth/callback/route.ts"), "utf8"));
+
+    expect(source).toContain("alreadySignedIn");
+
+    // Both dead ends need it: the guard that runs when no usable token arrives,
+    // and the failure after verifyOtp rejects one. Covering only the second
+    // leaves a reload of a tokenless URL still bouncing to /login.
+    const uses = source.match(/alreadySignedIn\(\)/g) ?? [];
+    expect(uses.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("proves the session rather than trusting the cookie", async () => {
+    // Stripped, because the note beside the call names `getSession` as the
+    // thing being avoided — the same collision the `code()` helper exists for.
+    const source = code(await readFile(SOURCE("app/(auth)/auth/callback/route.ts"), "utf8"));
+
+    const helper = source.match(/async function alreadySignedIn[\s\S]*?\n\}/)?.[0];
+
+    expect(helper).toBeDefined();
+    // This decides whether to admit somebody. `getSession` reads the cookie and
+    // would accept a forged one.
+    expect(helper).toContain("getUser");
+    expect(helper).not.toContain("getSession");
+  });
+
+  it("sends them where the link was going, not to an error", async () => {
+    const source = code(await readFile(SOURCE("app/(auth)/auth/callback/route.ts"), "utf8"));
+
+    // `redirect(next)` inside the already-signed-in branches. Landing them on
+    // /login would be the same dead end with an extra step.
+    expect(source).toMatch(/alreadySignedIn\(\)\s*\)\s*\{[\s\S]{0,220}?redirect\(next\)/);
+  });
+});
+
+/**
+ * Only the newest link works.
+ *
+ * Supabase keeps one recovery token per account, so issuing a second cancels
+ * the first. An admin who pressed the button twice and sent the earlier link
+ * sent a dead one, and nothing on the screen said so.
+ */
+describe("the issued link says what will invalidate it", () => {
+  it("warns that a newer link cancels this one, and that it opens once", async () => {
+    const source = await readFile(SOURCE("app/(app)/admin/users/role-form.tsx"), "utf8");
+
+    const panel = source.match(/function IssuedLink[\s\S]*?\n\}/)?.[0];
+
+    expect(panel).toBeDefined();
+    expect(panel).toMatch(/newest link works/i);
+    expect(panel).toMatch(/opens once/i);
+  });
+});
+
+/**
  * Why the invitation is a link rather than an email.
  *
  * Supabase's own template ends in a URL fragment that never reaches a server,

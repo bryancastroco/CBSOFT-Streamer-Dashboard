@@ -53,6 +53,28 @@ function IssuedLink({ url, onDone }: { url: string; onDone: () => void }) {
         here, so deliver it however you normally reach them.
       </p>
 
+      {/*
+       * Both of these were learned from a real failure.
+       *
+       * Supabase keeps one recovery token per account, so pressing the button
+       * again overwrites the previous one — an admin who pressed twice and sent
+       * the first link sent a dead link, with nothing anywhere saying so.
+       *
+       * And the link is spent on first use. Somebody who opens it, gets to the
+       * password form and wanders off cannot reopen it; they see "could not be
+       * verified", which reads as a broken link rather than a used one.
+       */}
+      <ul className="space-y-1 text-xs text-amber-700 dark:text-amber-500">
+        <li>
+          <span className="font-medium">Only the newest link works.</span> Pressing the button again
+          cancels this one — so send this link before creating another.
+        </li>
+        <li>
+          <span className="font-medium">It opens once.</span> Tell them to set their password in
+          that same sitting; reopening the link afterwards will not work.
+        </li>
+      </ul>
+
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           readOnly
