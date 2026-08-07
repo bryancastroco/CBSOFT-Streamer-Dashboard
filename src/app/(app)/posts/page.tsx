@@ -14,6 +14,7 @@ import { POST_SORT_KEYS } from "@/lib/filters/sorting";
 import { listPosts } from "@/lib/repositories/posts";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 import { getGameFilterView } from "@/lib/services/game-filter-view";
+import { DISPLAY_TIME_ZONE_LABEL } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Posts" };
 export const dynamic = "force-dynamic";
@@ -118,7 +119,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader
         title="Posts"
-        description="Published Facebook Page posts collected from Meta. A dash means Meta did not report that figure — it does not mean zero. All times are UTC."
+        description={`Published Facebook Page posts collected from Meta. A dash means Meta did not report that figure — it does not mean zero. All times are ${DISPLAY_TIME_ZONE_LABEL}.`}
       />
 
       <FilterBar

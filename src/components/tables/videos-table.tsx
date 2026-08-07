@@ -19,6 +19,7 @@ import type { BrowseQuery } from "@/lib/filters/browse";
 import { ariaSortFor, type SortState, type VideoSortKey } from "@/lib/filters/sorting";
 import { formatDuration } from "@/lib/meta/videos";
 import type { VideoTableItem } from "@/lib/repositories/videos";
+import { formatDateTime } from "@/lib/time/zone";
 
 /**
  * The videos table, used by `/videos` and by the Videos tab of a streamer.
@@ -31,13 +32,6 @@ export const VIDEOS_DEFAULT_SORT: SortState<VideoSortKey> = {
   direction: "desc",
 };
 
-function formatWhen(value: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
-}
 
 /**
  * What to call a video.
@@ -119,7 +113,7 @@ export function VideosTable({
           />
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs whitespace-nowrap text-muted-foreground">
-              {formatWhen(video.createdTime)}
+              {formatDateTime(video.createdTime)}
             </p>
             <GameBadge name={video.gameName} source={video.gameSource} show={showGames} />
           </div>
@@ -251,7 +245,7 @@ export function VideosTable({
           />
 
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs text-muted-foreground">{formatWhen(video.createdTime)}</p>
+            <p className="text-xs text-muted-foreground">{formatDateTime(video.createdTime)}</p>
             <GameBadge name={video.gameName} source={video.gameSource} show={showGames} />
           </div>
 

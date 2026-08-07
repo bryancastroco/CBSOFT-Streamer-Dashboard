@@ -18,6 +18,7 @@ import { realFindings } from "@/lib/ai/presentation";
 import type { BrowseQuery } from "@/lib/filters/browse";
 import { ariaSortFor, type AnalysisSortKey, type SortState } from "@/lib/filters/sorting";
 import type { AnalysisListItem } from "@/lib/repositories/analysis";
+import { formatDateTime } from "@/lib/time/zone";
 
 /**
  * AI comment analyses across posts and videos.
@@ -45,11 +46,7 @@ export const ANALYSIS_DEFAULT_SORT: SortState<AnalysisSortKey> = {
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 function contentLabel(item: AnalysisListItem, limit = 120): string | null {

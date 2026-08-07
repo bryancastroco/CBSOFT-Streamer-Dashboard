@@ -8,6 +8,7 @@ import { gameClause } from "@/lib/db/game-filter";
 import { tsParam } from "@/lib/db/params";
 import { commentSummaries, posts, streamers, videos } from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
+import { DISPLAY_TIME_ZONE } from "@/lib/time/zone";
 import type { SentimentSlice, TimeSeriesPoint, TopStreamer } from "@/lib/ui/dashboard-shapes";
 import { getDashboardMetrics, type DashboardMetrics, type MetricsFilters } from "./metrics";
 
@@ -144,6 +145,14 @@ export async function getMetricsComparison(filters: DashboardFilters): Promise<M
  * chart reads as "nothing was published", which is true; a zero reads as
  * "published and nobody engaged", which is a different and usually false
  * claim.
+ *
+ * ## Which day a post falls on
+ *
+ * The display zone's, matching what every table prints beside the same post.
+ * `date_trunc` on a `timestamptz` buckets by the session zone — UTC here — so
+ * a 07:00 post would have been labelled 7 August in the table and counted
+ * under 6 August in the bar beside it. Nobody would report that as a bug; they
+ * would just quietly stop trusting the chart.
  */
 export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeriesPoint[]> {
   const db = getDb();
@@ -154,7 +163,7 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
   const postRows = includePosts
     ? await db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${posts.createdTime}), 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(date_trunc('day', ${posts.createdTime} at time zone ${DISPLAY_TIME_ZONE}), 'YYYY-MM-DD')`,
           reactions: sql<number>`coalesce(sum(${posts.reactionCount}), 0)::int`,
           comments: sql<number>`coalesce(sum(${posts.commentCount}), 0)::int`,
           shares: sql<number>`coalesce(sum(${posts.shareCount}), 0)::int`,
@@ -162,18 +171,18 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
         })
         .from(posts)
         .where(and(...contentScope(posts, filters)))
-        .groupBy(sql`date_trunc('day', ${posts.createdTime})`)
+        .groupBy(sql`date_trunc('day', ${posts.createdTime} at time zone ${DISPLAY_TIME_ZONE})`)
     : [];
 
   const videoRows = includeVideos
     ? await db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${videos.createdTime}), 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(date_trunc('day', ${videos.createdTime} at time zone ${DISPLAY_TIME_ZONE}), 'YYYY-MM-DD')`,
           count: sql<number>`count(*)::int`,
         })
         .from(videos)
         .where(and(...contentScope(videos, filters)))
-        .groupBy(sql`date_trunc('day', ${videos.createdTime})`)
+        .groupBy(sql`date_trunc('day', ${videos.createdTime} at time zone ${DISPLAY_TIME_ZONE})`)
     : [];
 
   const byDay = new Map<string, TimeSeriesPoint>();

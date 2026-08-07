@@ -25,6 +25,7 @@ import { applicabilityOf, getVideoMetrics } from "@/lib/repositories/canonical-m
 import { countCommentsForContent, getSummaryForVideo } from "@/lib/repositories/comments";
 import { getVideoById } from "@/lib/repositories/videos";
 import { videoIdSchema } from "@/lib/validation/videos";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Video" };
 export const dynamic = "force-dynamic";
@@ -48,11 +49,7 @@ export const maxDuration = 300;
 
 function formatWhen(value: Date | null): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 export default async function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {

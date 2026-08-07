@@ -17,17 +17,11 @@ import {
 } from "@/components/ui/table";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getSyncLogTotals, listSyncLogs, type SyncLogRow } from "@/lib/repositories/sync-logs";
+import { DISPLAY_TIME_ZONE_LABEL, formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Sync logs" };
 export const dynamic = "force-dynamic";
 
-function formatDateTime(value: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
-}
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "—";
@@ -62,7 +56,14 @@ export default async function AdminSyncLogsPage() {
     <>
       <PageHeader
         title="Sync logs"
-        description="Every synchronisation run, newest first. A run that reports partial finished with some streamers succeeding and others not — open the streamer to see which."
+        /*
+         * The one screen that names the zone. Everywhere else a local time
+         * needs no label — it matches the reader's own clock. Here somebody is
+         * comparing a run against a cron schedule written in UTC, and the
+         * eight-hour gap between the two is exactly what they are trying to
+         * reason about.
+         */
+        description={`Every synchronisation run, newest first, in ${DISPLAY_TIME_ZONE_LABEL}. A run that reports partial finished with some streamers succeeding and others not — open the streamer to see which.`}
       />
 
       <MetricGrid>
@@ -109,7 +110,7 @@ export default async function AdminSyncLogsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Started (UTC)</TableHead>
+                  <TableHead>Started ({DISPLAY_TIME_ZONE_LABEL})</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Scope</TableHead>
                   <TableHead>Status</TableHead>

@@ -50,33 +50,45 @@ describe("period presets", () => {
 });
 
 describe("period resolution", () => {
-  it("bounds Today to that whole UTC day, not the last 24 hours", () => {
+  it("bounds Today to that whole display-zone day, not the last 24 hours", () => {
     const period = resolvePeriod({ preset: "today", now: NOW });
 
-    expect(period.from?.toISOString()).toBe("2026-07-15T00:00:00.000Z");
-    expect(period.to?.toISOString()).toBe("2026-07-15T23:59:59.999Z");
+    expect(toIsoDate(period.from as Date)).toBe("2026-07-15");
+    expect(toIsoDate(period.to as Date)).toBe("2026-07-15");
+  });
+
+  /*
+   * The one assertion that pins the actual offset. Everything else above is
+   * written in display-zone days and would keep passing if the zone silently
+   * reverted to UTC — this would not.
+   */
+  it("puts the day boundary at midnight in Manila, not at midnight UTC", () => {
+    const period = resolvePeriod({ preset: "today", now: NOW });
+
+    expect(period.from?.toISOString()).toBe("2026-07-14T16:00:00.000Z");
+    expect(period.to?.toISOString()).toBe("2026-07-15T15:59:59.999Z");
   });
 
   it("counts the last 7 days inclusive of today", () => {
     // Today plus the six days before it — not 168 hours back from 13:47.
     const period = resolvePeriod({ preset: "7d", now: NOW });
 
-    expect(period.from?.toISOString()).toBe("2026-07-09T00:00:00.000Z");
-    expect(period.to?.toISOString()).toBe("2026-07-15T23:59:59.999Z");
+    expect(toIsoDate(period.from as Date)).toBe("2026-07-09");
+    expect(toIsoDate(period.to as Date)).toBe("2026-07-15");
   });
 
   it("counts the last 30 days inclusive of today", () => {
     const period = resolvePeriod({ preset: "30d", now: NOW });
 
-    expect(period.from?.toISOString()).toBe("2026-06-16T00:00:00.000Z");
-    expect(period.to?.toISOString()).toBe("2026-07-15T23:59:59.999Z");
+    expect(toIsoDate(period.from as Date)).toBe("2026-06-16");
+    expect(toIsoDate(period.to as Date)).toBe("2026-07-15");
   });
 
   it("crosses a month boundary correctly", () => {
     const period = resolvePeriod({ preset: "7d", now: new Date("2026-03-02T09:00:00Z") });
 
     // February 2026 has 28 days.
-    expect(period.from?.toISOString()).toBe("2026-02-24T00:00:00.000Z");
+    expect(toIsoDate(period.from as Date)).toBe("2026-02-24");
   });
 
   it("leaves All time unbounded on both ends", () => {
@@ -94,7 +106,7 @@ describe("period resolution", () => {
 });
 
 describe("custom ranges", () => {
-  it("expands the given dates to whole UTC days", () => {
+  it("expands the given dates to whole display-zone days", () => {
     const period = resolvePeriod({
       preset: "custom",
       from: "2026-07-01",
@@ -102,20 +114,20 @@ describe("custom ranges", () => {
       now: NOW,
     });
 
-    expect(period.from?.toISOString()).toBe("2026-07-01T00:00:00.000Z");
+    expect(toIsoDate(period.from as Date)).toBe("2026-07-01");
     // Inclusive of the end date, or a report for "1st to 7th" would omit the 7th.
-    expect(period.to?.toISOString()).toBe("2026-07-07T23:59:59.999Z");
+    expect(toIsoDate(period.to as Date)).toBe("2026-07-07");
     expect(period.warning).toBeNull();
   });
 
   it("accepts an open-ended range", () => {
     const fromOnly = resolvePeriod({ preset: "custom", from: "2026-07-01", now: NOW });
-    expect(fromOnly.from?.toISOString()).toBe("2026-07-01T00:00:00.000Z");
+    expect(toIsoDate(fromOnly.from as Date)).toBe("2026-07-01");
     expect(fromOnly.to).toBeNull();
 
     const toOnly = resolvePeriod({ preset: "custom", to: "2026-07-01", now: NOW });
     expect(toOnly.from).toBeNull();
-    expect(toOnly.to?.toISOString()).toBe("2026-07-01T23:59:59.999Z");
+    expect(toIsoDate(toOnly.to as Date)).toBe("2026-07-01");
   });
 
   it("swaps a reversed range and says so, rather than showing nothing", () => {
@@ -126,8 +138,8 @@ describe("custom ranges", () => {
       now: NOW,
     });
 
-    expect(period.from?.toISOString()).toBe("2026-07-01T00:00:00.000Z");
-    expect(period.to?.toISOString()).toBe("2026-07-07T23:59:59.999Z");
+    expect(toIsoDate(period.from as Date)).toBe("2026-07-01");
+    expect(toIsoDate(period.to as Date)).toBe("2026-07-07");
     expect(period.warning).toMatch(/swapped/i);
   });
 
@@ -150,7 +162,8 @@ describe("custom ranges", () => {
 
 describe("date parsing", () => {
   it("accepts only YYYY-MM-DD", () => {
-    expect(parseIsoDate("2026-07-15")?.toISOString()).toBe("2026-07-15T00:00:00.000Z");
+    // The instant that calendar day begins in Manila, not UTC midnight.
+    expect(parseIsoDate("2026-07-15")?.toISOString()).toBe("2026-07-14T16:00:00.000Z");
 
     expect(parseIsoDate("2026-7-15")).toBeNull();
     expect(parseIsoDate("15/07/2026")).toBeNull();

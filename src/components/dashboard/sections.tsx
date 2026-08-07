@@ -24,6 +24,7 @@ import type { MetricTotal } from "@/lib/repositories/metrics";
 import { SEVERITY_LABEL, severityOf } from "@/lib/ui/severity";
 import { describeStatus } from "@/lib/ui/status";
 import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/time/zone";
 
 const numberFormat = new Intl.NumberFormat();
 
@@ -518,12 +519,14 @@ export function SyncHealth({
             {recent.map((run) => (
               <li key={run.id} className="flex items-center justify-between gap-2 text-xs">
                 <StatusBadge domain="sync" status={run.status} compact />
+                {/*
+                 * Was an unpinned `toLocaleString`, which resolved to the
+                 * server's zone during SSR and the browser's after hydration —
+                 * the same row rendering two different times within a second
+                 * of itself, and neither matching the sync-logs page.
+                 */}
                 <span className="truncate text-muted-foreground">
-                  {run.startedAt.toLocaleDateString()}{" "}
-                  {run.startedAt.toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatDateTime(run.startedAt)}
                 </span>
               </li>
             ))}

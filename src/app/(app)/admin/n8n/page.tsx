@@ -23,6 +23,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { resolveAppOrigin } from "@/lib/config/app-origin";
 import { describeConfiguration } from "@/lib/config/settings-view";
 import { getAutomationHealth } from "@/lib/repositories/admin-health";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "n8n integration" };
 export const dynamic = "force-dynamic";
@@ -40,11 +41,7 @@ const numberFormat = new Intl.NumberFormat("en-GB");
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 function relative(value: Date | null): string {

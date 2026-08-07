@@ -26,6 +26,7 @@ import {
 } from "@/lib/connect/invitations";
 import { listInvitations } from "@/lib/repositories/page-connections";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Page connections" };
 export const dynamic = "force-dynamic";
@@ -51,11 +52,7 @@ export const dynamic = "force-dynamic";
 
 function formatWhen(value: Date | null): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 function StatusBadge({ state }: { state: EffectiveStatus }) {

@@ -21,17 +21,11 @@ import { AUDIT_ACTION_LABELS } from "@/lib/audit/actions";
 import { requireAdmin } from "@/lib/auth/guards";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/auth/roles";
 import { listRecentAuditLogs, listUsers } from "@/lib/repositories/users";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Users" };
 export const dynamic = "force-dynamic";
 
-function formatDate(value: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
-}
 
 export default async function AdminUsersPage() {
   // Re-checked here even though the admin layout already did: this page reads
@@ -101,7 +95,7 @@ export default async function AdminUsersPage() {
                           Deactivated
                         </Badge>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {formatDate(user.deactivatedAt)}
+                          {formatDateTime(user.deactivatedAt)}
                         </p>
                       </div>
                     ) : (
@@ -109,7 +103,7 @@ export default async function AdminUsersPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(user.createdAt)}
+                    {formatDateTime(user.createdAt)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-wrap justify-end gap-2">
@@ -181,7 +175,7 @@ export default async function AdminUsersPage() {
               {auditEntries.map((entry) => (
                 <TableRow key={entry.id}>
                   <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
-                    {formatDate(entry.createdAt)}
+                    {formatDateTime(entry.createdAt)}
                   </TableCell>
                   <TableCell className="text-sm">
                     {AUDIT_ACTION_LABELS[entry.action] ?? entry.action}

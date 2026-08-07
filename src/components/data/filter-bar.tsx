@@ -26,6 +26,7 @@ import {
 } from "@/lib/filters/period";
 import type { SortState } from "@/lib/filters/sorting";
 import { cn } from "@/lib/utils";
+import { DISPLAY_TIME_ZONE_LABEL } from "@/lib/time/zone";
 
 /**
  * The filter bar every browsable screen shares.
@@ -185,7 +186,7 @@ export function FilterBar<K extends string>({
           <>
             <div className="grid gap-1.5 lg:w-40">
               <Label htmlFor={`${ids}-from`} className="text-xs text-muted-foreground">
-                From (UTC)
+                From ({DISPLAY_TIME_ZONE_LABEL})
               </Label>
               <Input
                 key={`from-${currentFrom}`}
@@ -199,7 +200,7 @@ export function FilterBar<K extends string>({
             </div>
             <div className="grid gap-1.5 lg:w-40">
               <Label htmlFor={`${ids}-to`} className="text-xs text-muted-foreground">
-                To (UTC)
+                To ({DISPLAY_TIME_ZONE_LABEL})
               </Label>
               <Input
                 key={`to-${currentTo}`}

@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { requireAdmin } from "@/lib/auth/guards";
 import { describeConfiguration } from "@/lib/config/settings-view";
 import { getAutomationHealth, getExportVolumes } from "@/lib/repositories/admin-health";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "General settings" };
 export const dynamic = "force-dynamic";
@@ -31,11 +32,7 @@ const numberFormat = new Intl.NumberFormat("en-GB");
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 async function Volume() {

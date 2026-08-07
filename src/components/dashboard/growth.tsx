@@ -5,6 +5,7 @@ import { MetricCard, MetricGrid } from "@/components/data/metric-card";
 import { EmptyState } from "@/components/layout/states";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { PageGrowth } from "@/lib/repositories/page-growth";
+import { formatDayLabel } from "@/lib/time/zone";
 
 /**
  * Audience size and how it moved.
@@ -21,12 +22,9 @@ import type { PageGrowth } from "@/lib/repositories/page-growth";
 const numberFormat = new Intl.NumberFormat("en-GB");
 
 function formatDay(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
+  // A calendar day from Meta's own daily buckets, not an instant — so it is
+  // labelled as given rather than converted into the display zone.
+  return iso ? formatDayLabel(iso) : "—";
 }
 
 /** A signed figure, because "+7" and "7" say different things about a trend. */

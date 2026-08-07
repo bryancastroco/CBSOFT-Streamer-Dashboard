@@ -87,7 +87,17 @@ export const exportQuerySchema = z
      * `max_watermark` cannot re-deliver the boundary rows.
      */
     updated_after: instantText.optional(),
-    /** Inclusive content-date window. Filters on when the content happened. */
+    /**
+     * Inclusive content-date window. Filters on when the content happened.
+     *
+     * A bare `YYYY-MM-DD` is read as **midnight UTC**, deliberately, and does
+     * not follow the dashboard's display zone. The screens moved to GMT+8
+     * because a person reads them; this is a machine contract with a documented
+     * meaning that n8n workflows already depend on, and silently reinterpreting
+     * a parameter by eight hours would shift the boundary of every incremental
+     * export without anything failing. Changing it is a contract change, and
+     * belongs in `docs/N8N-AUTOMATION.md` first.
+     */
     from: instant.optional(),
     to: instant.optional(),
     streamer_id: z.uuid("streamer_id must be a UUID.").optional(),

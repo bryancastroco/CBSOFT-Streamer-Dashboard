@@ -6,13 +6,24 @@
  * export. Two screens computing the window separately is how a report and the
  * dashboard it was supposed to match end up disagreeing.
  *
- * ## Why UTC
+ * ## Which day is "today"
  *
- * Meta reports `created_time` in UTC and the database stores `timestamptz`. A
- * window computed in the viewer's local zone would put the same post inside
- * "today" for one person and outside it for another. The whole application
- * displays UTC (see the `formatWhen` helpers) and the boundaries match that.
+ * The display zone's day, not UTC's and not the viewer's browser's. All three
+ * were candidates and only one is defensible: the viewer's browser would put
+ * the same post inside "today" for one person and outside it for another, and
+ * UTC would start "today" at 08:00 local — so at 07:00 in the morning, "Today"
+ * showed yesterday's content and last night's posts had vanished from it.
+ *
+ * The rule is that the boundaries must agree with what the screens print. Both
+ * read `lib/time/zone`, so changing the zone moves them together.
  */
+
+import {
+  displayDayStart,
+  endOfDisplayDay,
+  startOfDisplayDay,
+  toDisplayIsoDate,
+} from "@/lib/time/zone";
 
 export const PERIOD_PRESETS = ["today", "7d", "30d", "custom", "all"] as const;
 
@@ -62,27 +73,11 @@ export type ResolvedPeriod = {
 
 const DAY_MS = 86_400_000;
 
-/** Midnight UTC on the day containing `instant`. */
-export function startOfUtcDay(instant: Date): Date {
-  return new Date(
-    Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate(), 0, 0, 0, 0),
-  );
-}
+/** Midnight, display zone, on the day containing `instant`. */
+export const startOfDay = startOfDisplayDay;
 
-/** The last representable millisecond of the day containing `instant`. */
-export function endOfUtcDay(instant: Date): Date {
-  return new Date(
-    Date.UTC(
-      instant.getUTCFullYear(),
-      instant.getUTCMonth(),
-      instant.getUTCDate(),
-      23,
-      59,
-      59,
-      999,
-    ),
-  );
-}
+/** The last representable millisecond of that same day. */
+export const endOfDay = endOfDisplayDay;
 
 /**
  * Parse a `YYYY-MM-DD` value from a date input.
@@ -90,6 +85,10 @@ export function endOfUtcDay(instant: Date): Date {
  * Deliberately strict: `new Date("2026-7-1")` and `new Date("last tuesday")`
  * behave differently across engines, and a filter that silently resolves to the
  * wrong window is worse than one that reports it could not read the input.
+ *
+ * Returns the instant that calendar day *begins* in the display zone, not UTC
+ * midnight. Someone typing 7 August means their 7 August, and the difference is
+ * the eight hours that would otherwise fall into the wrong end of the range.
  */
 export function parseIsoDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -98,20 +97,25 @@ export function parseIsoDate(value: string | null | undefined): Date | null {
   if (!match) return null;
 
   const [, year, month, day] = match;
-  const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
+  const probe = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+  if (Number.isNaN(probe.getTime())) return null;
 
   // Rejects 2026-02-31, which the Date constructor would roll over to March.
-  if (parsed.getUTCMonth() + 1 !== Number(month) || parsed.getUTCDate() !== Number(day)) {
+  if (probe.getUTCMonth() + 1 !== Number(month) || probe.getUTCDate() !== Number(day)) {
     return null;
   }
 
-  return parsed;
+  // Built from the validated fields rather than shifted from `probe`: no single
+  // instant names a calendar day in every zone, so the fields are the input.
+  return displayDayStart(Number(year), Number(month), Number(day));
 }
 
-/** Format a Date as the `YYYY-MM-DD` an `<input type="date">` expects. */
+/**
+ * Format a Date as the `YYYY-MM-DD` an `<input type="date">` expects — the day
+ * the reader is looking at, which is the display zone's day.
+ */
 export function toIsoDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
+  return toDisplayIsoDate(value);
 }
 
 export type PeriodInput = {
@@ -136,8 +140,11 @@ export function resolvePeriod(input: PeriodInput = {}): ResolvedPeriod {
 
   const rolling = (days: number): ResolvedPeriod => ({
     preset,
-    from: new Date(startOfUtcDay(now).getTime() - (days - 1) * DAY_MS),
-    to: endOfUtcDay(now),
+    // Snapped back to midnight after the arithmetic. Subtracting fixed 24-hour
+    // blocks from one midnight lands on the next only in a zone without DST;
+    // re-normalising costs nothing and keeps this honest if the zone changes.
+    from: startOfDay(new Date(startOfDay(now).getTime() - (days - 1) * DAY_MS)),
+    to: endOfDay(now),
     label: PERIOD_LABELS[preset],
     warning: null,
   });
@@ -188,15 +195,15 @@ export function resolvePeriod(input: PeriodInput = {}): ResolvedPeriod {
         // Swapping is friendlier than an empty table, but the reader is told.
         return {
           preset,
-          from: startOfUtcDay(to),
-          to: endOfUtcDay(from),
+          from: startOfDay(to),
+          to: endOfDay(from),
           label: `${toIsoDate(to)} → ${toIsoDate(from)}`,
           warning: "The end date was before the start date, so the two were swapped.",
         };
       }
 
-      const lower = from ? startOfUtcDay(from) : null;
-      const upper = to ? endOfUtcDay(to) : null;
+      const lower = from ? startOfDay(from) : null;
+      const upper = to ? endOfDay(to) : null;
 
       return {
         preset,

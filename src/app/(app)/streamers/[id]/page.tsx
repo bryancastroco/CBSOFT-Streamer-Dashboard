@@ -66,6 +66,7 @@ import {
 import { listVideos } from "@/lib/repositories/videos";
 import { getGameFilterView } from "@/lib/services/game-filter-view";
 import { streamerIdSchema } from "@/lib/validation/streamers";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Streamer" };
 export const dynamic = "force-dynamic";
@@ -74,11 +75,7 @@ const numberFormat = new Intl.NumberFormat("en-GB");
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 /** A sum, with the rows that reported nothing named rather than counted as zero. */

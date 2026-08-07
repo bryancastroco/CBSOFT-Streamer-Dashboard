@@ -30,6 +30,7 @@ import {
 } from "@/lib/repositories/streamers";
 import { countVideosForStreamer } from "@/lib/repositories/videos";
 import { streamerIdSchema } from "@/lib/validation/streamers";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Streamer" };
 export const dynamic = "force-dynamic";
@@ -53,11 +54,7 @@ export const maxDuration = 300;
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 export default async function StreamerDetailPage({ params }: { params: Promise<{ id: string }> }) {

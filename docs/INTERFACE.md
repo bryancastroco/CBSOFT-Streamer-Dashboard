@@ -9,7 +9,8 @@ How the screens are put together, and the four rules that shape them. Implemente
 There is one filter contract, resolved by one pure function, used by every screen and every export:
 
 ```
-src/lib/filters/period.ts   presets → a concrete UTC window
+src/lib/filters/period.ts   presets → a concrete window, in the display zone
+src/lib/time/zone.ts        the display zone itself, and every formatter
 src/lib/filters/sorting.ts  sort keys → an allow-list
 src/lib/filters/browse.ts   the combined resolver + the href builder
 ```
@@ -66,9 +67,21 @@ undone by the back button, and — the reason that matters most — can be hande
 endpoint. Both sides resolve it with the same function, so the file cannot describe a different set
 of rows than the table it was downloaded from.
 
-**Why UTC.** Meta reports `created_time` in UTC and the database stores `timestamptz`. A window
-computed in the viewer's local zone would put the same post inside "today" for one person and
-outside it for another. Every screen displays UTC and the boundaries match.
+**One display zone, named once.** `src/lib/time/zone.ts` holds `DISPLAY_TIME_ZONE`
+(`Asia/Manila`) and every formatter that reads it. Three things follow from that single constant
+and must stay in step: what the screens print, where "Today" starts and ends, and which day the
+dashboard's charts group a post under — the last of those is a `date_trunc … at time zone` in
+`repositories/dashboard.ts`. Let any one drift and a 7am post reads as the 7th in the table while
+being counted under the 6th in the bar beside it.
+
+The zone is fixed rather than taken from the browser. An unpinned `toLocaleString` resolves to the
+server's zone during SSR and the viewer's after hydration, so the same row renders two different
+times within a second of itself — and past that, two people comparing the same dashboard would
+read different numbers into the same day boundary.
+
+**Storage and the machine contract stay UTC.** Columns are `timestamptz`, and the automation
+exports parse `from`/`to` as midnight UTC (`lib/automation/query.ts`). That is a published contract
+n8n workflows depend on; the display zone is a presentation choice and does not reach it.
 
 **Rolling presets are whole days.** "Last 7 days" is today plus the six days before it, not the
 last 168 hours. Two weekly reports have to line up with days, not with the moment someone opened

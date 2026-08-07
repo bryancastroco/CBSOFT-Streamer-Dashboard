@@ -298,8 +298,10 @@ Legitimate metadata is not affected: `token_status`, `tokens_used` and
 | Cron Expression | `0 3 * * *` |
 | Timezone | your reporting timezone |
 
-The application works entirely in UTC; the trigger's timezone only decides when
-the sweep starts.
+The automation surface works entirely in UTC — `from`/`to` are read as midnight
+UTC and every timestamp is emitted with a `Z`. The trigger's timezone only
+decides when the sweep starts. (The dashboard *displays* GMT+8, which is a
+presentation choice and does not reach these endpoints.)
 
 ### Node 2 — HTTP Request: start the sweep
 

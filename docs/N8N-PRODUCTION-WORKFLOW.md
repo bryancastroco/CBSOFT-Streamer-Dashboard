@@ -163,8 +163,8 @@ the sync window.
 | Cron Expression | `0 3 * * *` |
 | Timezone | your reporting timezone |
 
-The application works entirely in UTC; the trigger's timezone only decides when
-the sweep starts.
+The automation surface works entirely in UTC; the trigger's timezone only
+decides when the sweep starts.
 
 **If Vercel Cron is also enabled**, the two are alternative triggers for the
 same sweep. The application refuses a run that starts sooner than
@@ -475,9 +475,11 @@ per post. At 100 posts per streamer and ~8 metrics each, ten streamers is ~8,000
 rows a month. Sheets holds 10 million cells; at 8 columns that is comfortable
 for a couple of years, and then the tab needs archiving.
 
-**Timezones.** The application is UTC throughout. Set the spreadsheet's locale
-to match, or a date column will read an hour or two off and somebody will spend
-an afternoon on it.
+**Timezones.** Exported timestamps are UTC, with an explicit `Z`. Set the
+spreadsheet's locale to match, or a date column will read a few hours off and
+somebody will spend an afternoon on it. Note that the dashboard shows GMT+8, so
+a sheet left on UTC will disagree with the screens by eight hours — that is
+expected, and the sheet is the one carrying the offset marker.
 
 **Do analysis in a separate spreadsheet** linked with `IMPORTRANGE`. These tabs
 are overwritten by an upsert on every run, and a formula or chart added inside a

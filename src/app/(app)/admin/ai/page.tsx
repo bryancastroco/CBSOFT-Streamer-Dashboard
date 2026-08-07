@@ -15,6 +15,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { describeConfiguration } from "@/lib/config/settings-view";
 import { getAiHealth } from "@/lib/repositories/admin-health";
 import { countCommentBacklog } from "@/lib/repositories/comment-backlog";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "AI settings" };
 export const dynamic = "force-dynamic";
@@ -33,11 +34,7 @@ const numberFormat = new Intl.NumberFormat("en-GB");
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 async function AiHealth({

@@ -32,6 +32,8 @@ import { isAdmin } from "@/lib/auth/roles";
 import { resolveAppOrigin } from "@/lib/config/app-origin";
 import { SHEET_TABS, branchLetterFor } from "@/lib/google-sheets/sheet-schema";
 import { getExportStatus, N8N_CONTACT_WINDOW_HOURS } from "@/lib/repositories/export-runs";
+import { formatDateTime } from "@/lib/time/zone";
+import { DISPLAY_TIME_ZONE_LABEL } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -40,11 +42,7 @@ const numberFormat = new Intl.NumberFormat("en-GB");
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 /** "3 hours ago", for the figures where recency is the point. */
@@ -233,7 +231,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Configuration, and the health of the Google Sheets reporting pipeline. All times are UTC."
+        description={`Configuration, and the health of the Google Sheets reporting pipeline. All times are ${DISPLAY_TIME_ZONE_LABEL}.`}
       />
 
       <Suspense

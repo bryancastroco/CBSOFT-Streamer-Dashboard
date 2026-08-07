@@ -25,6 +25,8 @@ import type { SortState } from "@/lib/filters/sorting";
 import { isTokenStatus } from "@/lib/meta/token-status";
 import { listStreamerRoster } from "@/lib/repositories/metrics";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
+import { formatDateTime } from "@/lib/time/zone";
+import { DISPLAY_TIME_ZONE_LABEL } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Streamers" };
 export const dynamic = "force-dynamic";
@@ -42,11 +44,7 @@ const DEFAULT_SORT: SortState<SortKey> = { key: "none", direction: "asc" };
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 async function RosterTable({ params, showTokens }: { params: RawParams; showTokens: boolean }) {
@@ -236,7 +234,7 @@ export default async function StreamersPage({
     <>
       <PageHeader
         title="Streamers"
-        description="CBSOFT streamers and the Facebook Pages connected to each. Personal profiles are not supported. All times are UTC."
+        description={`CBSOFT streamers and the Facebook Pages connected to each. Personal profiles are not supported. All times are ${DISPLAY_TIME_ZONE_LABEL}.`}
       />
 
       <FilterBar

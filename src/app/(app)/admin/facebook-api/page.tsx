@@ -22,6 +22,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { describeConfiguration } from "@/lib/config/settings-view";
 import { isTokenStatus } from "@/lib/meta/token-status";
 import { daysUntil, listTokenHealth } from "@/lib/repositories/admin-health";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Facebook API" };
 export const dynamic = "force-dynamic";
@@ -41,11 +42,7 @@ export const dynamic = "force-dynamic";
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 /** Expiry, said in the way that prompts action rather than arithmetic. */

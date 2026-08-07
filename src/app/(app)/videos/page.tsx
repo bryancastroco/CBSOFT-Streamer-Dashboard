@@ -14,6 +14,7 @@ import { VIDEO_SORT_KEYS } from "@/lib/filters/sorting";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
 import { listVideos } from "@/lib/repositories/videos";
 import { getGameFilterView } from "@/lib/services/game-filter-view";
+import { DISPLAY_TIME_ZONE_LABEL } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Videos" };
 export const dynamic = "force-dynamic";
@@ -111,7 +112,7 @@ export default async function VideosPage({ searchParams }: { searchParams: Promi
     <>
       <PageHeader
         title="Videos"
-        description="Videos published on connected Facebook Pages. Ended live broadcasts appear here as VODs. All times are UTC."
+        description={`Videos published on connected Facebook Pages. Ended live broadcasts appear here as VODs. All times are ${DISPLAY_TIME_ZONE_LABEL}.`}
       />
 
       <FilterBar

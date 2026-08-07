@@ -19,6 +19,7 @@ import { ariaSortFor } from "@/lib/filters/sorting";
 import type { BrowseQuery } from "@/lib/filters/browse";
 import type { PostSortKey, SortState } from "@/lib/filters/sorting";
 import type { PostTableItem } from "@/lib/repositories/posts";
+import { formatDateTime } from "@/lib/time/zone";
 
 /**
  * The posts table, used by `/posts` and by the Posts tab of a streamer.
@@ -45,13 +46,6 @@ export const POSTS_DEFAULT_SORT: SortState<PostSortKey> = {
   direction: "desc",
 };
 
-function formatWhen(value: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
-}
 
 function excerpt(message: string | null, limit = 140): string | null {
   if (!message) return null;
@@ -125,7 +119,7 @@ export function PostsTable({
           />
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs whitespace-nowrap text-muted-foreground">
-              {formatWhen(post.createdTime)}
+              {formatDateTime(post.createdTime)}
             </p>
             <GameBadge name={post.gameName} source={post.gameSource} show={showGames} />
           </div>
@@ -256,7 +250,7 @@ export function PostsTable({
           />
 
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs text-muted-foreground">{formatWhen(post.createdTime)}</p>
+            <p className="text-xs text-muted-foreground">{formatDateTime(post.createdTime)}</p>
             <GameBadge name={post.gameName} source={post.gameSource} show={showGames} />
           </div>
 

@@ -2,6 +2,7 @@ import { SentimentBadge, SummaryStatusBadge } from "@/components/data/analysis-b
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { hasRealFindings, toFindingList } from "@/lib/ai/presentation";
+import { formatDateTime } from "@/lib/time/zone";
 
 /**
  * Presentation of a stored comment analysis.
@@ -30,11 +31,7 @@ export type CommentAnalysisView = {
 
 function formatWhen(value: Date | null): string {
   if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 function FindingList({ title, items }: { title: string; items: string[] }) {

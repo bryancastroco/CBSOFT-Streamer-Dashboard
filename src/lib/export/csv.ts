@@ -80,10 +80,16 @@ export function toCsv<T>(rows: readonly T[], columns: readonly CsvColumn<T>[]): 
 }
 
 /**
- * A filename-safe slug plus a UTC date stamp.
+ * A filename-safe slug plus a date stamp.
  *
  * Two exports taken on different days should not overwrite each other in the
- * downloads folder.
+ * downloads folder — so the stamp is the day the person clicking sees on their
+ * own calendar, not the UTC day, which for the first eight hours of every
+ * morning here is yesterday.
+ *
+ * The cell values are a separate question and are deliberately left as full
+ * ISO-8601 with the `Z` suffix: a spreadsheet column is machine-read as often
+ * as it is read by a person, and an explicit UTC offset cannot be misread.
  */
 export function csvFilename(base: string, now: Date = new Date()): string {
   const slug =

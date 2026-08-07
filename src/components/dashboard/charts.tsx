@@ -18,6 +18,7 @@ import {
 
 import type { SentimentSlice, TimeSeriesPoint, TopStreamer } from "@/lib/ui/dashboard-shapes";
 import { describeStatus } from "@/lib/ui/status";
+import { formatDayLabel } from "@/lib/time/zone";
 
 /**
  * The dashboard's charts.
@@ -52,11 +53,9 @@ const TOOLTIP_STYLE = {
   labelStyle: { color: "var(--muted-foreground)", marginBottom: 2 },
 } as const;
 
-function shortDay(day: string): string {
-  // "2026-07-14" → "14 Jul". Parsed as UTC to match how the day was bucketed.
-  const date = new Date(`${day}T00:00:00Z`);
-  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
-}
+// "2026-07-14" → "14 Jul". The grouping already happened in SQL, in the
+// display zone; see `formatDayLabel` for why this must not convert again.
+const shortDay = formatDayLabel;
 
 /**
  * Engagement over time.

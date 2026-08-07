@@ -7,7 +7,8 @@ Conventions:
 
 - Primary keys are `uuid`. Application tables default to `gen_random_uuid()`; `users.id` does not,
   because it mirrors `auth.users.id`.
-- Timestamps are `timestamptz`, always UTC.
+- Timestamps are `timestamptz`, always stored UTC. Display is a separate concern: the screens
+  render them in `DISPLAY_TIME_ZONE` (`src/lib/time/zone.ts`). Nothing stored is zone-shifted.
 - Every table has RLS **enabled**. A table with RLS on and no matching policy denies everything,
   which is the correct default.
 - Metric tables (Phase 5+) are snapshot-based and append-only: a failed sync must never overwrite

@@ -24,6 +24,7 @@ import { applicabilityOf, getPostMetrics } from "@/lib/repositories/canonical-me
 import { getSummaryForPost } from "@/lib/repositories/comments";
 import { getPostById } from "@/lib/repositories/posts";
 import { postIdSchema } from "@/lib/validation/posts";
+import { formatDateTime } from "@/lib/time/zone";
 
 export const metadata: Metadata = { title: "Post" };
 export const dynamic = "force-dynamic";
@@ -47,11 +48,7 @@ export const maxDuration = 300;
 
 function formatWhen(value: Date | null): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+  return formatDateTime(value);
 }
 
 /** One engagement figure, rendered so absence never reads as zero. */

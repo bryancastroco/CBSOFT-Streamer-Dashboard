@@ -4,6 +4,7 @@ import {
   DEFAULT_PERIOD,
   resolveContentScope,
   resolvePeriod,
+  toIsoDate,
   type ContentScope,
   type PeriodPreset,
   type ResolvedPeriod,
@@ -218,18 +219,23 @@ export function buildBrowseHref<K extends string>(
   if (period !== DEFAULT_PERIOD) next.set("period", period);
 
   if (period === "custom") {
+    /*
+     * `toIsoDate`, not `toISOString().slice(0, 10)`.
+     *
+     * The bounds are display-zone day edges, so the lower one sits at 16:00 the
+     * previous UTC day and slicing the ISO string reports yesterday. The upper
+     * bound survives the same treatment by coincidence, which is what made this
+     * worth a comment: the bug appeared on one end of the range only, silently
+     * widening every custom filter by a day each time a link was rebuilt.
+     */
     const from =
       overrides.from !== undefined
         ? overrides.from
         : query.period.from
-          ? query.period.from.toISOString().slice(0, 10)
+          ? toIsoDate(query.period.from)
           : null;
     const to =
-      overrides.to !== undefined
-        ? overrides.to
-        : query.period.to
-          ? query.period.to.toISOString().slice(0, 10)
-          : null;
+      overrides.to !== undefined ? overrides.to : query.period.to ? toIsoDate(query.period.to) : null;
 
     if (from) next.set("from", from);
     if (to) next.set("to", to);
