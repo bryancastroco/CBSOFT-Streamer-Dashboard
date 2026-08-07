@@ -50,12 +50,27 @@ export const REQUIRED_SCOPES = [
 ] as const;
 
 /**
- * Scopes later phases want but Phase 3 can live without.
- * `pages_read_user_content` is needed for comment ingestion (Phase 7);
- * `pages_manage_metadata` for webhook subscriptions.
- * Reported to the operator, but they do not by themselves fail a token.
+ * Wanted, but not fatal when absent. Reported rather than failing the token.
+ *
+ * ## Why this list must only contain scopes the product asks for
+ *
+ * It also held `pages_manage_metadata`, pencilled in for webhook subscriptions
+ * that were never built. Nothing requests it: `CONNECT_SCOPES` does not, and
+ * asking would contradict what the connect page promises an outside streamer —
+ * "nothing is posted or changed" — since `manage` is a write permission. It was
+ * removed from the Meta login configuration for exactly that reason.
+ *
+ * So every connected Page displayed a permission with a hollow circle beside
+ * it, permanently, on a screen whose other four entries are things to fix. An
+ * admin reading that reasonably asks the streamer to grant it, and the streamer
+ * cannot: it is not on the consent dialog, because we never ask for it. An
+ * indicator that can only ever be unsatisfied is worse than no indicator, and
+ * it devalues the four beside it that mean something.
+ *
+ * `tests/token-scopes.test.ts` now holds the rule: nothing is reported here
+ * that the connect flow does not request.
  */
-export const RECOMMENDED_SCOPES = ["pages_read_user_content", "pages_manage_metadata"] as const;
+export const RECOMMENDED_SCOPES = ["pages_read_user_content"] as const;
 
 export const EXPECTED_SCOPES = [...REQUIRED_SCOPES, ...RECOMMENDED_SCOPES] as const;
 

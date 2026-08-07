@@ -68,10 +68,11 @@ describe("valid tokens", () => {
     const result = derive(identityOk(), debugOk({ scopes: [...REQUIRED_SCOPES] }));
 
     expect(result.status).toBe("valid");
-    expect(result.missingRecommendedScopes).toEqual([
-      "pages_read_user_content",
-      "pages_manage_metadata",
-    ]);
+    // Only the one now. `pages_manage_metadata` was reported here for webhook
+    // subscriptions that were never built, and was never requested by the
+    // connect flow — so it could only ever be listed as missing. See
+    // `tests/token-scopes.test.ts`.
+    expect(result.missingRecommendedScopes).toEqual(["pages_read_user_content"]);
     expect(result.message).toContain("Optional permissions not granted");
   });
 

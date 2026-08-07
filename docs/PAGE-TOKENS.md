@@ -101,11 +101,17 @@ The second call is skipped when the first has already disqualified the token.
 | `pages_read_engagement` | **Required** | Reactions, comments, shares |
 | `read_insights` | **Required** | Reach, impressions, watch time |
 | `pages_read_user_content` | Recommended | Comment ingestion (Phase 7) |
-| `pages_manage_metadata` | Recommended | Webhook subscriptions |
 
 A missing **required** scope yields `missing_permission`. Missing recommended scopes are reported
 in the message but do not fail the token — the specification lists these as permissions that "may
 include", and refusing a token for a scope no current phase uses would be wrong.
+
+**This table may not name a scope the connect flow does not request.** It used to list
+`pages_manage_metadata`, for webhook subscriptions that were never built, and nothing asked for it
+— so every connected Page showed a permission marked unsatisfied that no streamer could grant,
+because it never reaches the consent dialog. Asking would also contradict the read-only promise the
+connect page makes to an outside streamer, `manage` being a write permission. `tests/token-scopes
+.test.ts` fails if `EXPECTED_SCOPES` and `CONNECT_SCOPES` diverge again.
 
 ---
 
