@@ -9,8 +9,12 @@ import { pageOffset, pageSize, tsParam } from "@/lib/db/params";
 import type { ContentType } from "@/lib/comments/content-ref";
 import type { ContentScope } from "@/lib/filters/period";
 import type { AnalysisSortKey, SortState } from "@/lib/filters/sorting";
-import { mediaKindClause } from "@/lib/db/content-kind";
-import { scopeIncludesPosts, scopeIncludesVideos } from "@/lib/filters/period";
+import { scopeIncludesVideos } from "@/lib/filters/period";
+import {
+  commentPostScope,
+  mediaKindClause,
+  videosOwningTheirComments,
+} from "@/lib/db/content-kind";
 
 /**
  * The comment-analysis reading list.
@@ -107,8 +111,16 @@ const urgentCountExpression = sql`
  */
 function unifiedSource(filters: ListAnalysesFilters): SQL {
   const scope = filters.scope ?? "all";
-  const includePosts = scopeIncludesPosts(scope);
-  const includeVideos = scopeIncludesVideos(scope);
+
+  /*
+   * Both branches always run, scoped rather than switched off.
+   *
+   * A broadcast's analysis is on its feed story — the video row carries only
+   * whatever landed on the video object directly, which in production is almost
+   * nothing. Turning the post branch off for "livestreams" therefore hid every
+   * livestream analysis behind the empty half of the pair.
+   */
+  const postScope = commentPostScope(scope, sql`p`);
   const videoKind = mediaKindClause(sql`v.media_kind`, scope);
 
   const search = filters.search ? `%${filters.search}%` : null;
@@ -119,8 +131,15 @@ function unifiedSource(filters: ListAnalysesFilters): SQL {
    * analysis appears twice in this list — once as a post, once as a video —
    * because both rows carry one.
    */
-  const postConditions: SQL[] = [sql`cs.post_id is not null`, sql`p.video_id is null`];
-  const videoConditions: SQL[] = [sql`cs.video_id is not null`];
+  const postConditions: SQL[] = [sql`cs.post_id is not null`];
+  if (postScope) postConditions.push(postScope);
+
+  /*
+   * Videos that front a feed story are represented by it, so excluding them
+   * here is what keeps one broadcast to one row rather than listing it twice
+   * with its comments split between the two.
+   */
+  const videoConditions: SQL[] = [sql`cs.video_id is not null`, videosOwningTheirComments(sql`v`)];
   if (videoKind) videoConditions.push(videoKind);
 
   if (filters.streamerId) {
@@ -208,15 +227,15 @@ function unifiedSource(filters: ListAnalysesFilters): SQL {
     where ${sql.join(videoConditions, sql` and `)}
   `;
 
-  if (includePosts && includeVideos) {
-    return sql`${postBranch} union all ${videoBranch}`;
-  }
-  if (includePosts) return postBranch;
-  if (includeVideos) return videoBranch;
-
-  // Unreachable while ContentScope has three members, but a scope that matches
-  // nothing must return nothing rather than everything.
-  return sql`select * from (${postBranch}) as no_scope where false`;
+  /*
+   * The post branch always runs. It is where a broadcast's analysis lives, so
+   * switching it off for "livestreams" hid every livestream reading behind the
+   * near-empty video row it shares an item with.
+   *
+   * The video branch is conditional, because a reader asking for posts wants no
+   * video rows at all.
+   */
+  return scopeIncludesVideos(scope) ? sql`${postBranch} union all ${videoBranch}` : postBranch;
 }
 
 type AnalysisRow = {

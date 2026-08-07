@@ -166,6 +166,15 @@ export type MetricTotalsFilters = {
   period?: MetricPeriod | undefined;
   /** Restrict to posts or to videos. Omit for both. */
   contentType?: "post" | "video" | undefined;
+  /**
+   * Narrow videos to one kind. Omit for both kinds.
+   *
+   * `content_metrics_current` knows only post and video, so a livestream is
+   * reached through the video row it points at. Without this the Performance
+   * section answered the Livestreams filter with every content type it had —
+   * the same class of miss as the metric cards, in a different file.
+   */
+  mediaKind?: "video" | "livestream" | undefined;
 };
 
 /**
@@ -192,6 +201,21 @@ export async function getMetricTotals(filters: MetricTotalsFilters): Promise<Met
   if (filters.contentType) {
     clauses.push(eq(contentMetricsCurrent.contentType, filters.contentType));
   }
+
+  if (filters.mediaKind) {
+    clauses.push(sql`${videos.mediaKind} = ${filters.mediaKind}`);
+  }
+
+  /*
+   * A broadcast's feed story is not a post here either. Its metrics row exists
+   * and duplicates the video's, so counting both would report one broadcast
+   * twice in every total on the Performance section.
+   *
+   * Parenthesised deliberately. These clauses are joined with `and`, and a bare
+   * `a or b` among them rebinds the whole chain to `(… and a) or b` — which
+   * quietly widened the period filter until a test caught the wrong total.
+   */
+  clauses.push(sql`(${posts.videoId} is null or ${posts.id} is null)`);
 
   /*
    * Publication time, from whichever content table the row points at. The

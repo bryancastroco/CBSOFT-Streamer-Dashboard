@@ -12,10 +12,13 @@ import { getDb } from "@/lib/db";
 import { commentOverviewSummaries, commentSummaries, comments } from "@/lib/db/schema";
 import { gameClause } from "@/lib/db/game-filter";
 import { resultRows, tsParam } from "@/lib/db/params";
-import type { ContentScope } from "@/lib/filters/period";
+import { scopeIncludesVideos, type ContentScope } from "@/lib/filters/period";
 import type { DashboardFilters } from "@/lib/repositories/dashboard";
-import { mediaKindClause } from "@/lib/db/content-kind";
-import { scopeIncludesPosts, scopeIncludesVideos } from "@/lib/filters/period";
+import {
+  commentPostScope,
+  mediaKindClause,
+  videosOwningTheirComments,
+} from "@/lib/db/content-kind";
 
 /**
  * One analysis across every comment the dashboard filters currently select.
@@ -132,22 +135,33 @@ function contentClauses(filters: DashboardFilters): SQL {
  */
 function scopedContent(filters: DashboardFilters): SQL {
   /*
-   * A feed story for a broadcast is excluded here as everywhere: its comments
-   * are the livestream's comments, reached through the video, and counting the
-   * row as a post as well would pool the same conversation twice.
+   * Selected by which row owns the conversation, not by which table it is in.
+   *
+   * A broadcast's comments are on its feed story — 800 of them in production
+   * against 34 on the video rows — so pooling by video id alone reads a
+   * livestream as almost silent. And pooling both rows would count one
+   * broadcast twice. The item is therefore the row its comments are attached
+   * to: the feed story for a broadcast, the video row for a reel or an upload,
+   * the post itself for a post.
    */
+  const postScope = commentPostScope(filters.scope, sql`t`);
   const kind = mediaKindClause(sql`t.media_kind`, filters.scope);
 
   const posts = sql`select t.id, 'post' as kind, t.created_time from posts t
-    where ${contentClauses(filters)} and t.video_id is null`;
+    where ${contentClauses(filters)} ${postScope ? sql`and ${postScope}` : sql``}`;
+
   const videos = sql`select t.id, 'video' as kind, t.created_time from videos t
-    where ${contentClauses(filters)} ${kind ? sql`and ${kind}` : sql``}`;
+    where ${contentClauses(filters)}
+      and ${videosOwningTheirComments(sql`t`)}
+      ${kind ? sql`and ${kind}` : sql``}`;
 
-  const wantsPosts = scopeIncludesPosts(filters.scope);
-  const wantsVideos = scopeIncludesVideos(filters.scope);
-
-  if (wantsPosts && wantsVideos) return sql`${posts} union all ${videos}`;
-  return wantsPosts ? posts : videos;
+  /*
+   * The posts branch always runs, because it is where a broadcast's comments
+   * live even when the reader asked for videos. The videos branch does not: a
+   * reader who asked for posts wants no video rows at all, and leaving it on
+   * pooled every video comment into a posts-only reading.
+   */
+  return scopeIncludesVideos(filters.scope) ? sql`${posts} union all ${videos}` : posts;
 }
 
 export async function getCommentOverview(

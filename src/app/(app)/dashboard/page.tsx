@@ -35,6 +35,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/guards";
 import { resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
+import {
+  scopeIncludesPosts,
+  scopeIncludesVideos,
+  scopeVideoKind,
+} from "@/lib/filters/period";
 import type { SortState } from "@/lib/filters/sorting";
 import {
   getMetricsComparison,
@@ -312,11 +317,18 @@ async function CanonicalMetrics({ params, defaultGameId }: SectionProps) {
     streamerId: filters.streamerId,
     gameId: filters.gameId,
     period: filters.period,
-    ...(filters.scope === "posts"
+    /*
+     * Through the same vocabulary the queries use. Written as a comparison
+     * against two literals, "livestreams" matched neither and this section
+     * answered a Livestreams filter with every content type it had.
+     */
+    ...(scopeIncludesPosts(filters.scope) && !scopeIncludesVideos(filters.scope)
       ? { contentType: "post" as const }
-      : filters.scope === "videos"
-        ? { contentType: "video" as const }
-        : {}),
+      : {}),
+    ...(scopeIncludesVideos(filters.scope) && !scopeIncludesPosts(filters.scope)
+      ? { contentType: "video" as const }
+      : {}),
+    ...(scopeVideoKind(filters.scope) ? { mediaKind: scopeVideoKind(filters.scope)! } : {}),
   });
 
   if (totals.contentCount === 0) {
