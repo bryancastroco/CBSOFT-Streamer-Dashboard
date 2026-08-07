@@ -5,8 +5,8 @@ import {
   AlertTriangle,
   FileText,
   Heart,
-  KeyRound,
   MessageSquare,
+  Radio,
   Share2,
   Users,
   Video,
@@ -144,18 +144,6 @@ async function Metrics({ params, defaultGameId }: SectionProps) {
         href="/streamers"
       />
       <MetricTile
-        label="Valid page tokens"
-        value={current.validTokens}
-        icon={KeyRound}
-        tone={current.tokensNeedingAttention > 0 ? "warning" : "default"}
-        hint={
-          current.tokensNeedingAttention > 0
-            ? `${current.tokensNeedingAttention} token(s) need attention. A streamer with an invalid token stops syncing.`
-            : "Every active streamer has a working Page token."
-        }
-        href="/streamers"
-      />
-      <MetricTile
         label="Posts collected"
         value={current.postsCollected}
         previous={previous?.postsCollected}
@@ -168,7 +156,23 @@ async function Metrics({ params, defaultGameId }: SectionProps) {
         value={current.videosCollected}
         previous={previous?.videosCollected}
         icon={Video}
-        hint="Videos published in the selected period, after filters."
+        hint="Uploads and reels published in the selected period, after filters. Broadcasts are counted separately."
+        href="/videos"
+      />
+      {/*
+       * Its own card rather than part of the one above.
+       *
+       * A two-hour broadcast and a forty-second reel are not the same unit, and
+       * a single figure covering both describes neither. The two never overlap,
+       * so posts + videos + livestreams is the whole selection — which is the
+       * property the old counts did not have.
+       */}
+      <MetricTile
+        label="Livestreams collected"
+        value={current.livestreamsCollected}
+        previous={previous?.livestreamsCollected}
+        icon={Radio}
+        hint="Recorded broadcasts that ended in the selected period, after filters."
         href="/videos"
       />
       <MetricTile

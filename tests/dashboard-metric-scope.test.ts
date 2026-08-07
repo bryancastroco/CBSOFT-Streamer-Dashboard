@@ -65,7 +65,11 @@ async function seedPost(handle: string, videoRowId: string | null): Promise<void
 
 const counts = async (scope: ContentScope) => {
   const metrics = await getDashboardMetrics({ scope });
-  return { posts: metrics.postsCollected, videos: metrics.videosCollected };
+  return {
+    posts: metrics.postsCollected,
+    videos: metrics.videosCollected,
+    livestreams: metrics.livestreamsCollected,
+  };
 };
 
 beforeAll(async () => {
@@ -98,23 +102,32 @@ beforeEach(async () => {
 
 describe("every scope counts the right things", () => {
   it("counts all content without the duplicate", async () => {
-    // Five rows exist across the two tables; four are content.
-    expect(await counts("all")).toEqual({ posts: 2, videos: 2 });
+    // Five rows across the two tables; four items. The three figures partition
+    // them, so adding the cards up is the whole selection and nothing twice.
+    expect(await counts("all")).toEqual({ posts: 2, videos: 1, livestreams: 1 });
   });
 
   it("counts posts without the broadcast's feed story", async () => {
     // Three rows in `posts`, two of them posts. This builder was the one place
     // still counting the third.
-    expect(await counts("posts")).toEqual({ posts: 2, videos: 0 });
+    expect(await counts("posts")).toEqual({ posts: 2, videos: 0, livestreams: 0 });
   });
 
   it("counts videos without the broadcast", async () => {
-    expect(await counts("videos")).toEqual({ posts: 0, videos: 1 });
+    expect(await counts("videos")).toEqual({ posts: 0, videos: 1, livestreams: 0 });
   });
 
-  it("counts the broadcast under livestreams", async () => {
-    // The regression, exactly: this reported 0.
-    expect(await counts("livestreams")).toEqual({ posts: 0, videos: 1 });
+  it("counts the broadcast under livestreams, and not as a video", async () => {
+    // Two regressions in one assertion: this reported 0 before the scope fix,
+    // and would report the broadcast in both figures if the split were a sum.
+    expect(await counts("livestreams")).toEqual({ posts: 0, videos: 0, livestreams: 1 });
+  });
+
+  it("never counts one item under two headings", async () => {
+    const { posts, videos, livestreams } = await counts("all");
+
+    // The property the old counts did not have.
+    expect(posts + videos + livestreams).toBe(4);
   });
 
   it("reports a non-zero video count for every scope that includes videos", async () => {
@@ -124,9 +137,9 @@ describe("every scope counts the right things", () => {
      * called — which is what a test of only the four known values would miss.
      */
     for (const scope of CONTENT_SCOPES) {
-      const { videos } = await counts(scope);
-      if (scope === "posts") expect(videos).toBe(0);
-      else expect(videos).toBeGreaterThan(0);
+      const { videos, livestreams } = await counts(scope);
+      if (scope === "posts") expect(videos + livestreams).toBe(0);
+      else expect(videos + livestreams).toBeGreaterThan(0);
     }
   });
 });

@@ -53,7 +53,18 @@ export type DashboardMetrics = {
   tokensNeedingAttention: number;
   /** Period- and filter-scoped. */
   postsCollected: number;
+  /** Videos and reels — never broadcasts, which are counted separately. */
   videosCollected: number;
+  /**
+   * Recorded livestreams.
+   *
+   * Its own figure rather than part of `videosCollected`, because the two are
+   * not comparable: a broadcast runs for hours and carries hundreds of
+   * comments, a reel runs for forty seconds. One number covering both describes
+   * neither, and adding the two cards together is the double count this area
+   * spent a phase removing.
+   */
+  livestreamsCollected: number;
   totalReactions: MetricTotal;
   totalComments: MetricTotal;
   totalShares: MetricTotal;
@@ -176,15 +187,28 @@ async function aggregatePosts(filters: MetricsFilters) {
 async function aggregateVideos(filters: MetricsFilters) {
   const db = getDb();
 
+  /*
+   * Counted apart, because the dashboard now shows them apart.
+   *
+   * One `rows` total would have to be shared between the two cards, and the
+   * only way to share it is to add them — which is the double count this whole
+   * area exists to remove. Two filtered counts over the same scan cost nothing
+   * and cannot disagree with each other.
+   */
   const [row] = await db
     .select({
-      rows: sql<number>`count(*)::int`,
+      videoRows: sql<number>`count(*) filter (where ${videos.mediaKind} = 'video')::int`,
+      livestreamRows: sql<number>`count(*) filter (where ${videos.mediaKind} = 'livestream')::int`,
       latest: sql<string | null>`max(${videos.createdTime})`,
     })
     .from(videos)
     .where(whereOf(videoWindow(filters)));
 
-  return { rows: row?.rows ?? 0, latest: tsResult(row?.latest) };
+  return {
+    videoRows: row?.videoRows ?? 0,
+    livestreamRows: row?.livestreamRows ?? 0,
+    latest: tsResult(row?.latest),
+  };
 }
 
 /**
@@ -271,7 +295,8 @@ export async function getDashboardMetrics(filters: MetricsFilters = {}): Promise
     validTokens: roster[0]?.valid ?? 0,
     tokensNeedingAttention: roster[0]?.attention ?? 0,
     postsCollected: postAgg?.rows ?? 0,
-    videosCollected: videoAgg?.rows ?? 0,
+    videosCollected: videoAgg?.videoRows ?? 0,
+    livestreamsCollected: videoAgg?.livestreamRows ?? 0,
     totalReactions: postAgg?.reactions ?? EMPTY_TOTAL,
     totalComments: postAgg?.comments ?? EMPTY_TOTAL,
     totalShares: postAgg?.shares ?? EMPTY_TOTAL,
@@ -517,7 +542,15 @@ export async function getStreamerOverview(params: {
 
   return {
     postCount: postAgg.rows,
-    videoCount: videoAgg.rows,
+    /*
+     * Both kinds, summed deliberately.
+     *
+     * The streamer overview has one "Videos" figure and its own tabs beneath
+     * for the detail, so the split the dashboard cards make would have nowhere
+     * to land here. Summed rather than left as one count so that adding the
+     * livestream card did not silently drop broadcasts from this page.
+     */
+    videoCount: videoAgg.videoRows + videoAgg.livestreamRows,
     commentCount,
     summaryCount: summaryAgg.generated,
     urgentCount: summaryAgg.urgent,
