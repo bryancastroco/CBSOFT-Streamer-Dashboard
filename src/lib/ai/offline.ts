@@ -74,8 +74,70 @@ const STOP_WORDS = new Set([
 
 const SUGGESTION_MARKERS = ["please", "pwede", "sana", "suggest", "should", "wish", "hope", "add"];
 
+/**
+ * Links, removed before anything else looks at the text.
+ *
+ * Three separate failures came from not doing this, all of them on one screen:
+ *
+ *  - `tokenise` strips punctuation, so `https://playcbm.com/dl-dopey` became the
+ *    words `https`, `playcbm`, `com`, `dl`. "Most mentioned" then read
+ *    "com (11 comments), download (11), https (11), playcbm (11)" — a list of
+ *    URL fragments presented as what the audience is talking about.
+ *
+ *  - Question detection is `includes("?")`, and a query string contains one.
+ *    `…/subscribenow?surface=pinned` was counted as somebody asking something,
+ *    which is how seven copies of a download link came to be listed under
+ *    "Questions being asked".
+ *
+ *  - A link carries no tone, so scoring it is noise either way.
+ *
+ * Not global, because a global regex carries `lastIndex` between calls and a
+ * shared one used for `.test()` alternates between true and false on identical
+ * input. `replace` gets its own.
+ */
+const URL_ANYWHERE = /\bhttps?:\/\/\S+|\bwww\.\S+/i;
+
+function stripUrls(text: string): string {
+  return text.replace(/\bhttps?:\/\/\S+|\bwww\.\S+/gi, " ");
+}
+
+/** Letters and digits only, for comparing two comments as the same thing. */
+function normaliseForComparison(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A comment that is essentially a link.
+ *
+ * The model is told to ignore spam and promotional content. Nothing told this,
+ * so a bot posting the same download link eleven times dominated every list —
+ * the terms, the questions, and the count the summary opens with.
+ *
+ * The test is "remove the links and see what is left" rather than a keyword
+ * list, because the giveaway is structural: a person sharing a link says
+ * something about it, and an advert is the link.
+ *
+ * Measured in words rather than characters. Characters were tried first at a
+ * threshold of twenty and let the real advert through — "Download link:
+ * Register here:" is twenty-four characters of pure scaffolding, and no
+ * character count separates that from a short genuine remark without also
+ * catching one. Four words of label around three URLs is a promotion; five or
+ * more words is somebody talking.
+ */
+const OWN_WORDS_REQUIRED = 5;
+
+function isLinkOnly(text: string): boolean {
+  if (!URL_ANYWHERE.test(text)) return false;
+
+  const ownWords = stripUrls(text)
+    .split(/[^\p{L}\p{N}']+/u)
+    .filter((word) => word.length > 0);
+
+  return ownWords.length < OWN_WORDS_REQUIRED;
+}
+
 function tokenise(text: string): string[] {
-  return text
+  return stripUrls(text)
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s']/gu, " ")
     .split(/\s+/)
@@ -163,6 +225,7 @@ function describeQuantitatively(
   scored: Scored[],
   sentiment: CommentSentiment,
   questions: number,
+  setAside: { duplicates: number; links: number },
 ): string {
   const positive = scored.filter((item) => item.positive > item.negative).length;
   const negative = scored.filter((item) => item.negative > item.positive).length;
@@ -178,6 +241,19 @@ function describeQuantitatively(
     parts.push(`${questions} contain${questions === 1 ? "s" : ""} a question.`);
   }
 
+  /*
+   * Stated, not silently dropped. A count that shrinks with no explanation
+   * looks like data loss, and "12 comments" meaning eleven copies of one advert
+   * was the reason this reads honestly now.
+   */
+  const removed: string[] = [];
+  if (setAside.duplicates > 0) removed.push(`${setAside.duplicates} repeated`);
+  if (setAside.links > 0) removed.push(`${setAside.links} link-only`);
+
+  if (removed.length > 0) {
+    parts.push(`Set aside: ${removed.join(", ")}.`);
+  }
+
   parts.push("No written summary — this is a tally, not an interpretation.");
 
   return parts.join(" ");
@@ -190,7 +266,32 @@ function describeQuantitatively(
  * nothing readable, which is a legitimate result rather than an error.
  */
 export function analyseOffline(messages: readonly string[]): CommentAnalysis {
-  const comments = messages.map((message) => message.trim()).filter((message) => message.length > 0);
+  const trimmed = messages.map((message) => message.trim()).filter((message) => message.length > 0);
+
+  /*
+   * Deduplicated before anything counts them.
+   *
+   * The same comment posted eleven times is one thing said once, not eleven
+   * findings — and every list here slices its first few, so without this a
+   * single repeated advert fills all of them and nothing else is visible. The
+   * first occurrence wins so the text stays exactly as somebody wrote it.
+   */
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  let duplicates = 0;
+
+  for (const message of trimmed) {
+    const key = normaliseForComparison(message);
+    if (seen.has(key)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(key);
+    unique.push(message);
+  }
+
+  const links = unique.filter(isLinkOnly).length;
+  const comments = unique.filter((message) => !isLinkOnly(message));
 
   if (comments.length === 0) {
     return {
@@ -207,7 +308,9 @@ export function analyseOffline(messages: readonly string[]): CommentAnalysis {
   const scored = comments.map(score);
   const sentiment = overallSentiment(scored);
 
-  const questions = comments.filter((comment) => comment.includes("?")).slice(0, 10);
+  // Against the text with links removed: a query string contains a `?` and is
+  // not a question. That alone produced seven identical "questions".
+  const questions = comments.filter((comment) => stripUrls(comment).includes("?")).slice(0, 10);
 
   const urgent = scored
     .filter((item) => item.urgent)
@@ -240,7 +343,10 @@ export function analyseOffline(messages: readonly string[]): CommentAnalysis {
     items.length > 0 ? items : [NO_SIGNIFICANT_FINDINGS];
 
   return {
-    summary: describeQuantitatively(comments.length, scored, sentiment, questions.length),
+    summary: describeQuantitatively(comments.length, scored, sentiment, questions.length, {
+      duplicates,
+      links,
+    }),
     sentiment,
     // Themes ride along with the positives: they are the closest this can get
     // to "what is being talked about", and they are labelled as counts.

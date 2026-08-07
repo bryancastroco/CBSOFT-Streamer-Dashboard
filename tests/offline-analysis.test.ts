@@ -167,3 +167,81 @@ describe("honesty about what it is", () => {
     expect(result.questions).toEqual([NO_SIGNIFICANT_FINDINGS]);
   });
 });
+
+/**
+ * Spam, links and repetition.
+ *
+ * All three of these were visible on one screen at once, from a Page whose
+ * comments included the same download link posted eleven times:
+ *
+ *   Most mentioned: com (11 comments), download (11), https (11), playcbm (11)
+ *   Questions being asked: [the same advert, seven times]
+ *
+ * Neither list was wrong about its arithmetic. They were counting a URL as
+ * vocabulary and a query string as a question, and doing it eleven times over
+ * for one comment — so the loudest thing in the room was a bot.
+ */
+describe("links, duplicates and adverts", () => {
+  const ADVERT =
+    "Download link: https://playcbm.com/dl-dopey Register here: https://playcbm.com/register-DOPEY https://www.facebook.com/dopeyninins/subscribenow?surface=pinned_post";
+
+  it("does not treat a URL query string as a question", () => {
+    // The `?` in `?surface=pinned_post` is why seven copies of an advert were
+    // listed under "Questions being asked".
+    const result = analyseOffline([ADVERT, "ano oras ang stream?"]);
+
+    expect(result.questions).toEqual(["ano oras ang stream?"]);
+  });
+
+  it("does not report URL fragments as what people are talking about", () => {
+    const result = analyseOffline([
+      "check https://playcbm.com/dl-dopey for the download",
+      "another https://playcbm.com/register-DOPEY link here",
+      "https://playcbm.com/dl-dopey again",
+    ]);
+
+    const themes = result.positive_points.join(" ");
+
+    for (const fragment of ["https", "playcbm", "com"]) {
+      expect(themes).not.toContain(fragment);
+    }
+  });
+
+  it("counts a comment repeated eleven times as one comment", () => {
+    const result = analyseOffline([...Array(11).fill("same thing said again"), "a real comment"]);
+
+    expect(result.summary).toContain("2 comments");
+    expect(result.summary).toContain("10 repeated");
+  });
+
+  it("sets aside a comment that is only a link", () => {
+    const result = analyseOffline([ADVERT, "maganda ang stream kanina"]);
+
+    expect(result.summary).toContain("1 link-only");
+    // And it is nowhere in the findings.
+    const everything = [
+      ...result.positive_points,
+      ...result.concerns,
+      ...result.suggestions,
+      ...result.questions,
+    ].join(" ");
+    expect(everything).not.toContain("playcbm");
+  });
+
+  it("keeps a comment that shares a link and says something about it", () => {
+    // The distinction that matters: a person linking something and commenting
+    // on it is a contribution; the advert is the link and nothing else.
+    const result = analyseOffline([
+      "grabe ang ganda ng update na to, sobrang solid talaga https://playcbm.com/patch",
+    ]);
+
+    expect(result.summary).toContain("1 comment ");
+    expect(result.summary).not.toContain("link-only");
+  });
+
+  it("reports nothing readable when every comment is an advert", () => {
+    const result = analyseOffline([ADVERT, ADVERT, ADVERT]);
+
+    expect(result.sentiment).toBe("no_comments");
+  });
+});
