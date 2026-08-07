@@ -9,6 +9,7 @@ import {
   SyncPanel,
   TokenPanel,
 } from "@/app/(app)/admin/streamers/[id]/panels";
+import { StreamerGamesCard } from "@/app/(app)/admin/streamers/[id]/games-card";
 import { StreamerRemovalCard } from "@/app/(app)/admin/streamers/[id]/removal-card";
 import { SyncPostsPanel } from "@/app/(app)/admin/streamers/[id]/sync-posts-panel";
 import { SyncVideosPanel } from "@/app/(app)/admin/streamers/[id]/sync-videos-panel";
@@ -53,6 +54,7 @@ import {
 } from "@/lib/filters/sorting";
 import { EXPECTED_SCOPES } from "@/lib/meta/token-status";
 import { listCommentAnalyses } from "@/lib/repositories/analysis";
+import { listGameOptions, listStreamerGames } from "@/lib/repositories/games";
 import { getStreamerOverview, type MetricTotal } from "@/lib/repositories/metrics";
 import { getPageGrowth } from "@/lib/repositories/page-growth";
 import { listPosts } from "@/lib/repositories/posts";
@@ -532,9 +534,11 @@ async function SyncHistoryTab({ streamerId }: { streamerId: string }) {
  * Server Action before mutating anything.
  */
 async function SettingsTab({ streamerId }: { streamerId: string }) {
-  const [streamer, removal] = await Promise.all([
+  const [streamer, removal, gameOptions, streamerGames] = await Promise.all([
     getStreamerById(streamerId),
     getStreamerRemovalView(streamerId),
+    listGameOptions(),
+    listStreamerGames(streamerId),
   ]);
   if (!streamer) notFound();
 
@@ -661,6 +665,27 @@ async function SettingsTab({ streamerId }: { streamerId: string }) {
        * that unreachable from this screen. The card itself decides which of the
        * three to offer.
        */}
+      {/*
+       * The same card the admin screen shows, from the same component.
+       *
+       * This tab already carries every other admin control — the token, the
+       * details, the sync buttons, and permanent deletion — so a streamer's
+       * game was the one setting that lived somewhere else. Nobody hunts for a
+       * second settings page when they are already looking at one called
+       * Settings; they conclude the feature is missing.
+       *
+       * It matters more than it looks. Untagged content falls back to the
+       * streamer's primary game, and with none set the game filter cannot reach
+       * it at all — which is why the archive sat almost entirely unattributed.
+       */}
+      {!streamer.deletedAt ? (
+        <StreamerGamesCard
+          streamerId={streamer.id}
+          options={gameOptions}
+          assignments={streamerGames}
+        />
+      ) : null}
+
       {removal ? <StreamerRemovalCard streamer={removal} /> : null}
     </div>
   );
