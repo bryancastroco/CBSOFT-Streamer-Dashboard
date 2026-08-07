@@ -52,6 +52,15 @@ export function tokenHashesMatch(a: string, b: string): boolean {
  * short enough that a link forwarded into a group chat six months ago is no
  * longer a way in. An admin can always issue another — the cost of expiry is one
  * click, and the cost of no expiry is a credential with no end date.
+ *
+ * Three days was considered after the first batch went out and rejected: the
+ * requirement is a floor, not a target, and a link that dies while a streamer
+ * is away costs an admin a re-issue and the streamer a second explanation.
+ * Fourteen clears the floor comfortably.
+ *
+ * Changing it affects only new invitations. `expires_at` is written per row
+ * when the link is minted, so anything already sent keeps the window it was
+ * issued with — there is no back-dating and no migration to write.
  */
 export const INVITATION_TTL_DAYS = 14;
 

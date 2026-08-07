@@ -77,7 +77,7 @@ async function Invitations() {
 
   return (
     <>
-      <InviteForm streamers={streamers} />
+      <InviteForm streamers={streamers} ttlDays={INVITATION_TTL_DAYS} />
 
       <Card>
         <CardHeader>

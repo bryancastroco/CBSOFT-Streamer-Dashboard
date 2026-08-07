@@ -34,7 +34,22 @@ function Submit({ label, pendingLabel }: { label: string; pendingLabel: string }
  * scrolls away. Somebody who closes this without copying has to issue another
  * invitation, and it is better to say so than to let them find out.
  */
-function IssuedLink({ url, onDone }: { url: string; onDone: () => void }) {
+function IssuedLink({
+  url,
+  ttlDays,
+  onDone,
+}: {
+  url: string;
+  /*
+   * Passed in rather than imported. `lib/connect/invitations` reaches for
+   * `node:crypto`, so a Client Component cannot have it — which is why this
+   * number was typed out by hand and would have kept saying fourteen after the
+   * constant changed. A prop is the cheapest way to make the screen wrong only
+   * if the server is wrong too.
+   */
+  ttlDays: number;
+  onDone: () => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -55,7 +70,17 @@ function IssuedLink({ url, onDone }: { url: string; onDone: () => void }) {
       <p className="text-sm font-medium">Invitation link — copy it now</p>
       <p className="text-xs text-muted-foreground">
         This is the only time it can be shown. Send it to the streamer however you normally reach
-        them. It expires in 14 days and can be revoked at any time.
+        them. It expires in {ttlDays} day{ttlDays === 1 ? "" : "s"} and can be revoked at any time.
+      </p>
+      {/*
+       * Said where the link is copied, because both are things the admin has to
+       * pass on in the same message. Learned from the first batch: the ones
+       * that stalled were opened inside Messenger, and the hold between signing
+       * in and choosing a Page is fifteen minutes.
+       */}
+      <p className="text-xs text-amber-700 dark:text-amber-500">
+        Ask them to open it in Chrome or Safari rather than inside Messenger, and to finish in one
+        sitting — the Facebook sign-in step times out after 15 minutes.
       </p>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -75,8 +100,11 @@ function IssuedLink({ url, onDone }: { url: string; onDone: () => void }) {
 
 export function InviteForm({
   streamers,
+  ttlDays,
 }: {
   streamers: readonly { id: string; streamerCode: string; streamerName: string }[];
+  /** How long an issued link lasts. See the note on `IssuedLink`. */
+  ttlDays: number;
 }) {
   const [state, formAction] = useActionState(createInvitationAction, idleState);
 
@@ -108,7 +136,7 @@ export function InviteForm({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {showIssued ? <IssuedLink url={issued} onDone={() => setDismissedUrl(issued)} /> : null}
+        {showIssued ? <IssuedLink url={issued} ttlDays={ttlDays} onDone={() => setDismissedUrl(issued)} /> : null}
 
         <form action={formAction} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
