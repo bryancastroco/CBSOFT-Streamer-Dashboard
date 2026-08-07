@@ -506,15 +506,16 @@ export async function listStreamerRoster(params: {
 
 export type StreamerOverview = {
   postCount: number;
+  /** Uploads and reels. Broadcasts are counted separately. */
   videoCount: number;
+  /** Recorded livestreams. Never included in `videoCount`. */
+  livestreamCount: number;
   commentCount: number;
   summaryCount: number;
   urgentCount: number;
   reactions: MetricTotal;
   comments: MetricTotal;
   shares: MetricTotal;
-  latestPostAt: Date | null;
-  latestVideoAt: Date | null;
 };
 
 /** Stored comments for one streamer, counted through whichever parent they hang off. */
@@ -568,14 +569,19 @@ export async function getStreamerOverview(params: {
      * to land here. Summed rather than left as one count so that adding the
      * livestream card did not silently drop broadcasts from this page.
      */
-    videoCount: videoAgg.videoRows + videoAgg.livestreamRows,
+    /*
+     * Split, not summed. This page briefly added the two together because it
+     * had one slot for them; giving broadcasts their own card means the sum
+     * would count each one twice — the same arithmetic the dashboard cards had
+     * to lose.
+     */
+    videoCount: videoAgg.videoRows,
+    livestreamCount: videoAgg.livestreamRows,
     commentCount,
     summaryCount: summaryAgg.generated,
     urgentCount: summaryAgg.urgent,
     reactions: postAgg.reactions,
     comments: postAgg.comments,
     shares: postAgg.shares,
-    latestPostAt: postAgg.latest,
-    latestVideoAt: videoAgg.latest,
   };
 }

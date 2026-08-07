@@ -38,7 +38,9 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-const { getDashboardMetrics } = await import("@/lib/repositories/metrics");
+const { getDashboardMetrics, getStreamerOverview } = await import(
+  "@/lib/repositories/metrics",
+);
 
 let client: PGlite;
 let streamerId: string;
@@ -141,5 +143,30 @@ describe("every scope counts the right things", () => {
       if (scope === "posts") expect(videos + livestreams).toBe(0);
       else expect(videos + livestreams).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * The per-streamer overview counts the same way the roster and the cards do.
+ *
+ * It briefly summed the two kinds, when it had one slot for them. Giving
+ * broadcasts their own card there means the sum would count each one twice —
+ * the arithmetic this file exists to keep honest, on a third screen.
+ */
+describe("the streamer overview", () => {
+  it("splits uploads from broadcasts", async () => {
+    const overview = await getStreamerOverview({ streamerId });
+
+    expect(overview.videoCount).toBe(1);
+    expect(overview.livestreamCount).toBe(1);
+  });
+
+  it("counts the feed story as neither a post nor a video", async () => {
+    const overview = await getStreamerOverview({ streamerId });
+
+    // Three rows in `posts`, two of them posts — the third is the broadcast's
+    // feed story, already counted as a livestream.
+    expect(overview.postCount).toBe(2);
+    expect(overview.postCount + overview.videoCount + overview.livestreamCount).toBe(4);
   });
 });

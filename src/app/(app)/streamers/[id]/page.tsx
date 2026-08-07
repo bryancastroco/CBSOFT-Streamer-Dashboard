@@ -151,7 +151,12 @@ async function OverviewTab({
         <MetricCard
           label="Videos collected"
           value={numberFormat.format(overview.videoCount)}
-          hint={query.period.label}
+          hint={`Uploads and reels. ${query.period.label}`}
+        />
+        <MetricCard
+          label="Livestreams collected"
+          value={numberFormat.format(overview.livestreamCount)}
+          hint={`Recorded broadcasts. ${query.period.label}`}
         />
         <MetricCard
           label="Comments stored"
@@ -172,16 +177,17 @@ async function OverviewTab({
         <MetricCard label="Total reactions" value={reactions.value} hint={reactions.hint} />
         <MetricCard label="Total comments" value={comments.value} hint={comments.hint} />
         <MetricCard label="Total shares" value={shares.value} hint={shares.hint} />
-        <MetricCard
-          label="Latest post"
-          value={overview.latestPostAt ? "Collected" : "—"}
-          hint={formatWhen(overview.latestPostAt)}
-        />
-        <MetricCard
-          label="Latest video"
-          value={overview.latestVideoAt ? "Collected" : "—"}
-          hint={formatWhen(overview.latestVideoAt)}
-        />
+        {/*
+         * "Latest post" and "Latest video" stood here. Their value was the word
+         * "Collected" — the same for every streamer with any content at all —
+         * and the date they actually carried was demoted to the hint. The
+         * header already states when this streamer last synced, and each tab
+         * shows its newest item with a title, so two cards were spent saying
+         * something twice over in a weaker form.
+         *
+         * "Latest video" had also stopped meaning one thing: with broadcasts
+         * split out, it could not say whether it meant an upload or a stream.
+         */}
       </MetricGrid>
 
       {/*
