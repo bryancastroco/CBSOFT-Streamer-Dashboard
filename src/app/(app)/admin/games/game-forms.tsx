@@ -2,10 +2,14 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { CircleAlert, Plus, Save, Trash2 } from "lucide-react";
+import { CircleAlert, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { deleteGameAction, saveGameAction } from "@/app/(app)/admin/games/actions";
+import {
+  deleteGameAction,
+  refileContentAction,
+  saveGameAction,
+} from "@/app/(app)/admin/games/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -144,6 +148,29 @@ export function GameForm({ game, onDone }: { game?: GameRow; onDone?: () => void
   );
 }
 
+/**
+ * Recompute attribution across the whole archive.
+ *
+ * Separate from saving a game, because the two answer different questions.
+ * Saving asks "apply my edit"; this asks "are the existing answers still
+ * right?" — which is the question after a rule change or a sweep that ran while
+ * the registry was incomplete, and there was previously no way to ask it
+ * without editing something you did not want to edit.
+ */
+function RefileButton() {
+  const [state, formAction] = useActionState(refileContentAction, idleState);
+  useActionToast(state);
+
+  return (
+    <form action={formAction}>
+      <Submit pendingLabel="Re-filing…" variant="outline">
+        <RefreshCw className="size-4" aria-hidden />
+        Re-file all content
+      </Submit>
+    </form>
+  );
+}
+
 /** Deleting unfiles content rather than removing it, and the wording says so. */
 function DeleteGame({ game }: { game: GameRow }) {
   const [state, formAction] = useActionState(deleteGameAction, idleState);
@@ -200,15 +227,24 @@ export function GamesManager({ games }: { games: GameRow[] }) {
                   : `${games.length} game${games.length === 1 ? "" : "s"}.`}
               </CardDescription>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant={adding ? "outline" : "default"}
-              onClick={() => setAdding((open) => !open)}
-            >
-              <Plus className="size-4" aria-hidden />
-              {adding ? "Cancel" : "Add game"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/*
+               * Only once there is something to file against. With no games
+               * registered the pass returns immediately, and a button that
+               * reports "nothing moved" every time teaches people to ignore it.
+               */}
+              {games.length > 0 ? <RefileButton /> : null}
+
+              <Button
+                type="button"
+                size="sm"
+                variant={adding ? "outline" : "default"}
+                onClick={() => setAdding((open) => !open)}
+              >
+                <Plus className="size-4" aria-hidden />
+                {adding ? "Cancel" : "Add game"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
 

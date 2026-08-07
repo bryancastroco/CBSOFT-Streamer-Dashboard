@@ -232,3 +232,42 @@ export async function setStreamerGamesAction(
     message: `Saved ${outcome.data.count} game(s). ${resolved.postsUpdated} post(s) re-filed.`,
   };
 }
+
+/**
+ * Re-file every post and video against the current rules, on demand.
+ *
+ * ## Why this needs a button of its own
+ *
+ * A full re-resolve already ran on every save, as a side effect of editing a
+ * game. That covers the case it was written for — an admin adds a hashtag and
+ * expects the archive to move — and nothing else.
+ *
+ * It does not cover attribution going stale for a reason that is not an edit to
+ * a game: the rule itself changing, a deploy, or a sweep that filed content
+ * while the registry was incomplete. The nightly sweep cannot help, because it
+ * passes `onlyMissing` and so only ever looks at content with no game at all;
+ * anything already filed — including anything filed *wrongly* — is invisible to
+ * it, by design and for cost.
+ *
+ * That left "edit a game and save it" as the only way to recompute, which is a
+ * side effect masquerading as a feature: you have to change something you did
+ * not want to change to trigger it, and you have to already know it works that
+ * way. This is the same operation, reachable on purpose.
+ */
+export async function refileContentAction(): Promise<ActionState> {
+  const actor = await requireActor();
+  if ("status" in actor) return actor;
+
+  const resolved = await resolveContentGames();
+  revalidateGameSurfaces();
+
+  const moved = resolved.postsUpdated + resolved.videosUpdated;
+
+  return {
+    status: "success",
+    message:
+      moved === 0
+        ? "Everything was already filed correctly. Nothing moved."
+        : `Re-filed ${resolved.postsUpdated} post(s) and ${resolved.videosUpdated} video(s). ${resolved.unattributed} item(s) are under no registered game.`,
+  };
+}
