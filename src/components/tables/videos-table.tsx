@@ -17,7 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import type { BrowseQuery } from "@/lib/filters/browse";
-import { ariaSortFor, type SortState, type VideoSortKey } from "@/lib/filters/sorting";
+import { VIDEOS_DEFAULT_SORT } from "@/lib/ui/video-sort";
+import { ariaSortFor, type VideoSortKey } from "@/lib/filters/sorting";
 import { formatDuration } from "@/lib/meta/videos";
 import type { VideoTableItem } from "@/lib/repositories/videos";
 import { formatDateTime } from "@/lib/time/zone";
@@ -28,10 +29,9 @@ import { formatDateTime } from "@/lib/time/zone";
  * cards rather than a shrinking table below `md`.
  */
 
-export const VIDEOS_DEFAULT_SORT: SortState<VideoSortKey> = {
-  key: "createdTime",
-  direction: "desc",
-};
+// Re-exported so existing importers keep working; the value lives in a pure
+// module because a server-only service needs it too.
+export { VIDEOS_DEFAULT_SORT };
 
 
 /**

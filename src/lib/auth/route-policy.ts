@@ -76,6 +76,10 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { path: "/posts", access: "authenticated" },
   { path: "/api/posts", access: "authenticated" },
   { path: "/videos", access: "authenticated" },
+  // `resolveRouteAccess` denies by default, so a new screen that is not listed
+  // here is unreachable rather than open — which is the safe failure, and also
+  // a silent one if you only test it while signed in as an admin.
+  { path: "/livestreams", access: "authenticated" },
   { path: "/comment-analysis", access: "authenticated" },
   { path: "/streamers", access: "authenticated" },
   { path: "/reports", access: "authenticated" },

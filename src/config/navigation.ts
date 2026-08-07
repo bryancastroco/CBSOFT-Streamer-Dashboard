@@ -9,6 +9,7 @@ import {
   Link2 as LinkIcon,
   LayoutDashboard,
   MessagesSquare,
+  Radio,
   Plug,
   Settings,
   Share2,
@@ -81,6 +82,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         href: "/videos",
         icon: Video,
         description: "Page videos and their Meta insights.",
+        permission: "videos.view",
+      },
+      {
+        title: "Livestreams",
+        href: "/livestreams",
+        icon: Radio,
+        description: "Recorded broadcasts, kept apart from uploads and reels.",
         permission: "videos.view",
       },
       {

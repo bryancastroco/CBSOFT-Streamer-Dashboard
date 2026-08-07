@@ -217,17 +217,11 @@ async function RosterTable({
                     )}
                   </TableCell>
 
-                  {/*
-                   * Broadcasts, apart from the column beside it. Both link to
-                   * the same screen, which does not yet narrow to one kind —
-                   * the number is the claim here, and sending somebody to a
-                   * list that shows more than they clicked is a smaller lie
-                   * than folding two units into one figure.
-                   */}
+                  {/* Broadcasts, apart from the column beside it. */}
                   <TableCell className="text-right align-top font-mono text-xs">
                     {row.livestreamCount > 0 ? (
                       <Link
-                        href={`/videos?streamerId=${row.id}`}
+                        href={`/livestreams?streamerId=${row.id}`}
                         className="underline-offset-4 hover:underline"
                       >
                         {row.livestreamCount}

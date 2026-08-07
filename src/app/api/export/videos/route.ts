@@ -33,6 +33,12 @@ export async function GET(request: Request) {
       search: query.search,
       from: query.period.from,
       to: query.period.to,
+      /*
+       * Supplied by the Livestreams screen, which fixes its scope by route
+       * rather than by filter. Without it a CSV downloaded from that page would
+       * hold every video — a file disagreeing with the table it came from.
+       */
+      scope: query.scope,
       sort: query.sort,
       limit: EXPORT_ROW_LIMIT,
       offset: 0,
