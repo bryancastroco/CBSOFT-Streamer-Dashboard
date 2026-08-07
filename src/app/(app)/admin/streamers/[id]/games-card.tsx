@@ -25,19 +25,19 @@ function Submit() {
 }
 
 /**
- * Which games this streamer covers, and which one to assume.
+ * Which games this streamer covers.
  *
- * ## Why a primary exists at all
+ * ## What the primary does, and no longer does
  *
- * The primary is the fallback for content with no matching hashtag — which is
- * nearly all of it. Measured on this project's own data, 102 of 1,624 posts
- * carry any hashtag. Without a primary, a streamer's archive stays invisible to
- * every game filter no matter how carefully the hashtags are configured.
+ * It is a label about the streamer: the title they are mainly here for. It
+ * groups the roster and it tells a reader what to expect from this Page.
  *
- * It is optional, and deliberately so. A streamer who genuinely splits their
- * output between two titles has no honest default, and inventing one would file
- * half their posts under the wrong game — worse than leaving them unattributed,
- * because a wrong answer looks like a right one in a report.
+ * It does **not** decide what any individual post is about. It used to — an
+ * untagged post inherited it — and that turned a statement about a person into
+ * an assertion about every one of their posts, including the ones covering
+ * something else. In production it filed a Roblox stream under Cabal, and
+ * filtering for Cabal then returned it. Content is attributed by hashtag only;
+ * anything else stays unattributed and reachable under "Not Registered Games".
  *
  * The radio is disabled until its game is ticked: a primary outside the selected
  * set is a contradiction, and the repository drops it anyway.
@@ -84,9 +84,9 @@ export function StreamerGamesCard({
       <CardHeader>
         <CardTitle className="text-base">Games</CardTitle>
         <CardDescription>
-          Which titles this streamer covers. The primary is what a post with no matching hashtag is
-          filed under — most posts carry no hashtag, so without one this streamer&apos;s content
-          stays outside every game filter.
+          Which titles this streamer covers, and which one they are mainly here for. This describes
+          the streamer, not their individual posts: content is filed by the hashtags in its own
+          text, so setting a primary here does not move anything into a game filter.
         </CardDescription>
       </CardHeader>
 

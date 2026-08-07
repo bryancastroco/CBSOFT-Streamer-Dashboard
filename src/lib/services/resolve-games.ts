@@ -3,7 +3,7 @@ import "server-only";
 import { eq, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
-import { gameHashtags, posts, streamerGames, videos } from "@/lib/db/schema";
+import { gameHashtags, posts, videos } from "@/lib/db/schema";
 import { resolveGameFor } from "@/lib/games/hashtags";
 import { childLogger } from "@/lib/observability/logger";
 
@@ -53,19 +53,16 @@ export async function resolveContentGames(
 
   const hashtagToGame = new Map(tags.map((row) => [row.tag, row.gameId]));
 
-  const primaries = await db
-    .select({ streamerId: streamerGames.streamerId, gameId: streamerGames.gameId })
-    .from(streamerGames)
-    .where(eq(streamerGames.isPrimary, true));
-
-  const primaryFor = new Map(primaries.map((row) => [row.streamerId, row.gameId]));
-
   /*
    * Nothing configured means nothing to resolve — and clearing every existing
    * attribution would be a destructive answer to "no games have been set up
    * yet", which is the state on the very first run.
+   *
+   * Hashtags alone decide this now. It previously also checked for a streamer
+   * with a primary game, which was correct while that seeded attribution and
+   * would now be a way to keep running with no evidence to run on.
    */
-  if (hashtagToGame.size === 0 && primaryFor.size === 0) {
+  if (hashtagToGame.size === 0) {
     log.info("games.resolve.no_configuration");
     return { postsUpdated: 0, videosUpdated: 0, unattributed: 0, durationMs: 0 };
   }
@@ -97,7 +94,6 @@ export async function resolveContentGames(
         const resolved = resolveGameFor({
           text: row.message,
           hashtagToGame,
-          primaryGameId: primaryFor.get(row.streamerId) ?? null,
         });
 
         if (resolved.gameId === null) unattributed += 1;
@@ -141,7 +137,6 @@ export async function resolveContentGames(
           // Title and description both, because a hashtag lives in either.
           text: `${row.title ?? ""}\n${row.description ?? ""}`,
           hashtagToGame,
-          primaryGameId: primaryFor.get(row.streamerId) ?? null,
         });
 
         if (resolved.gameId === null) unattributed += 1;

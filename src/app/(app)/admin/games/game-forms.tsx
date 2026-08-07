@@ -259,14 +259,13 @@ export function GamesManager({ games }: { games: GameRow[] }) {
               </div>
             ) : (
               /*
-               * Worth saying plainly. A game with no hashtags still works via
-               * the streamer's primary game, but it can never pick a specific
-               * post out of a streamer who covers several titles.
+               * Worth saying plainly, and more so now that hashtags are the
+               * only route. A game with none can never receive content at all.
                */
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <p className="flex items-center gap-2 text-xs text-warning">
                 <CircleAlert className="size-3.5" aria-hidden />
-                No hashtags. Content reaches this game only through a streamer whose primary game
-                it is.
+                No hashtags, so nothing can be filed under this game. Add the tag your streamers
+                already use.
               </p>
             )}
 

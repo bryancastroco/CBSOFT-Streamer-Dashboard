@@ -110,28 +110,42 @@ export function slugifyGameName(name: string): string {
 /**
  * Which game a piece of content is about.
  *
- * Hashtag first, then the streamer's primary game. That order is the whole
- * design: a tag is evidence about *this post*, whereas the streamer's game is
- * an assumption about their output in general, and the specific should beat the
- * general.
+ * A hashtag, or nothing. Content that names no registered game is left
+ * unattributed and reachable through the "Not Registered Games" filter.
  *
- * Returns the source alongside the id so the caller can record which rule
- * applied. "Tagged as Cabal Mobile" and "assumed Cabal Mobile" are different
- * claims and the difference is worth keeping.
+ * ## Why the streamer's primary game no longer counts
+ *
+ * It used to: an untagged post inherited whatever title its streamer mainly
+ * covers, on the reasoning that only about one post in sixteen carries a
+ * hashtag and attribution by tag alone would leave most of the archive
+ * unfilterable.
+ *
+ * That reasoning was about coverage, and it bought coverage by guessing. A
+ * streamer's primary game is an assumption about their output in general; used
+ * as a fallback it becomes an assertion about every individual post, including
+ * the ones that are about something else. In production it labelled a Roblox
+ * stream "Cabal: Infinite Combo SEA" — and worse, filtering for Cabal returned
+ * that Roblox stream, which is the filter answering a question wrongly rather
+ * than declining to answer it.
+ *
+ * The number made the problem invisible: 114 of 213 posts were filed by
+ * assumption and 99 by evidence, so the archive looked comprehensively tagged
+ * while roughly half of it was guesswork. An unfiled post is a visible gap
+ * somebody can close by registering a game or adding a hashtag. A wrongly filed
+ * one is a silent error inside a number people report on.
+ *
+ * The `source` field is kept, still typed to allow `"streamer"`, because stored
+ * rows record which rule produced them and history should stay readable.
  */
 export function resolveGameFor(params: {
   text: string | null | undefined;
   /** Normalised tag to game id. */
   hashtagToGame: ReadonlyMap<string, string>;
-  /** The streamer's primary game, if they have one. */
-  primaryGameId: string | null;
 }): { gameId: string | null; source: "hashtag" | "streamer" | null } {
   for (const tag of extractHashtags(params.text)) {
     const gameId = params.hashtagToGame.get(tag);
     if (gameId) return { gameId, source: "hashtag" };
   }
-
-  if (params.primaryGameId) return { gameId: params.primaryGameId, source: "streamer" };
 
   return { gameId: null, source: null };
 }

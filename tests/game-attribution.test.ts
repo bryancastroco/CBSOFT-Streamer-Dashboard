@@ -152,40 +152,41 @@ describe("reading tags out of text", () => {
 describe("the resolution rule, in isolation", () => {
   const hashtagToGame = new Map([["cabalmobile", "game-mobile"]]);
 
-  it("prefers a tag over the streamer's game", () => {
-    const result = resolveGameFor({
-      text: "stream tonight #CabalMobile",
-      hashtagToGame,
-      primaryGameId: "game-pc",
-    });
+  it("attributes a post whose text names a registered game", () => {
+    const result = resolveGameFor({ text: "stream tonight #CabalMobile", hashtagToGame });
 
     expect(result).toEqual({ gameId: "game-mobile", source: "hashtag" });
   });
 
-  it("falls back to the streamer's game when nothing matches", () => {
-    const result = resolveGameFor({
-      text: "stream tonight",
-      hashtagToGame,
-      primaryGameId: "game-pc",
-    });
+  it("leaves an untagged post unattributed rather than assuming", () => {
+    /*
+     * This used to inherit the streamer's primary game. That bought coverage by
+     * guessing: in production it filed a Roblox stream under Cabal, and
+     * filtering for Cabal then returned it — the filter answering wrongly
+     * rather than declining to answer.
+     */
+    const result = resolveGameFor({ text: "stream tonight", hashtagToGame });
 
-    expect(result).toEqual({ gameId: "game-pc", source: "streamer" });
+    expect(result).toEqual({ gameId: null, source: null });
   });
 
-  it("ignores a tag that belongs to no game", () => {
-    const result = resolveGameFor({
-      text: "#mmorpg #hardcorerpg",
-      hashtagToGame,
-      primaryGameId: "game-pc",
-    });
+  it("leaves a post unattributed when its tags belong to no registered game", () => {
+    // The Roblox case: real hashtags, none of them registered here.
+    const result = resolveGameFor({ text: "#roblox #robloxgames", hashtagToGame });
 
-    expect(result.source).toBe("streamer");
+    expect(result).toEqual({ gameId: null, source: null });
   });
 
   it("leaves content unattributed when there is nothing to go on", () => {
-    const result = resolveGameFor({ text: "hello", hashtagToGame, primaryGameId: null });
+    expect(resolveGameFor({ text: "hello", hashtagToGame })).toEqual({
+      gameId: null,
+      source: null,
+    });
 
-    expect(result).toEqual({ gameId: null, source: null });
+    expect(resolveGameFor({ text: null, hashtagToGame })).toEqual({
+      gameId: null,
+      source: null,
+    });
   });
 
   it("uses the first recognised tag when several match", () => {
@@ -199,10 +200,17 @@ describe("the resolution rule, in isolation", () => {
     const result = resolveGameFor({
       text: "#CabalMobile stream — also on #CabalSEA",
       hashtagToGame: both,
-      primaryGameId: null,
     });
 
     expect(result.gameId).toBe("game-mobile");
+  });
+
+  it("never reports a streamer-sourced attribution", () => {
+    // The `source` union still allows "streamer" so stored history stays
+    // readable. Nothing may produce one any more.
+    for (const text of ["untagged", "#roblox", "#CabalMobile", null]) {
+      expect(resolveGameFor({ text, hashtagToGame }).source).not.toBe("streamer");
+    }
   });
 });
 
@@ -219,23 +227,18 @@ describe("resolving the stored roster", () => {
     expect(await gameOf(post)).toEqual({ game_id: mobileId, game_source: "hashtag" });
   });
 
-  it("falls back to the primary game, and says it assumed", async () => {
+  it("leaves an untagged post unattributed even when the streamer has a primary game", async () => {
+    /*
+     * The behaviour change. This used to file the post under `pcId` with
+     * `game_source: "streamer"`, which is what put a Roblox stream under Cabal
+     * in production — and made filtering for Cabal return it.
+     *
+     * The assignment still exists and still means something; it just does not
+     * decide what an individual post is about.
+     */
     const post = await seedPost("untagged", "no tags here");
     await client.query(
       `insert into streamer_games (streamer_id, game_id, is_primary) values ($1, $2, true)`,
-      [streamerId, pcId],
-    );
-
-    await resolveContentGames();
-
-    expect(await gameOf(post)).toEqual({ game_id: pcId, game_source: "streamer" });
-  });
-
-  it("leaves content alone when the streamer has no primary game", async () => {
-    const post = await seedPost("orphan", "no tags here");
-    // Assigned, but not primary — so there is nothing to assume.
-    await client.query(
-      `insert into streamer_games (streamer_id, game_id, is_primary) values ($1, $2, false)`,
       [streamerId, pcId],
     );
 
@@ -243,6 +246,21 @@ describe("resolving the stored roster", () => {
 
     expect(await gameOf(post)).toEqual({ game_id: null, game_source: null });
     expect(summary.unattributed).toBe(1);
+  });
+
+  it("clears an attribution a previous run had assumed", async () => {
+    // Migration in miniature: rows filed by the old rule have to move to
+    // unattributed, or the change would only apply to new content and the
+    // archive would keep its guesses forever.
+    const post = await seedPost("legacy", "no tags here");
+    await client.query(`update posts set game_id = $1, game_source = 'streamer' where id = $2`, [
+      pcId,
+      post,
+    ]);
+
+    await resolveContentGames();
+
+    expect(await gameOf(post)).toEqual({ game_id: null, game_source: null });
   });
 
   it("re-files history when a hashtag is added to a game", async () => {
@@ -258,7 +276,7 @@ describe("resolving the stored roster", () => {
     );
 
     await resolveContentGames();
-    expect((await gameOf(post)).game_source).toBe("streamer");
+    expect((await gameOf(post)).game_id).toBeNull();
 
     await client.query(`insert into game_hashtags (game_id, tag) values ($1, 'cabalpcsea')`, [pcId]);
     await resolveContentGames();
@@ -266,14 +284,16 @@ describe("resolving the stored roster", () => {
     expect(await gameOf(post)).toEqual({ game_id: pcId, game_source: "hashtag" });
   });
 
-  it("re-files when the primary game moves", async () => {
+  it("does not move an untagged post when the primary game moves", async () => {
+    // The primary game no longer reaches individual content at all, so
+    // reassigning it changes nothing about what is already filed.
     const post = await seedPost("untagged", "no tags");
     await client.query(
       `insert into streamer_games (streamer_id, game_id, is_primary) values ($1, $2, true)`,
       [streamerId, pcId],
     );
     await resolveContentGames();
-    expect((await gameOf(post)).game_id).toBe(pcId);
+    expect((await gameOf(post)).game_id).toBeNull();
 
     await client.query(`delete from streamer_games where streamer_id = $1`, [streamerId]);
     await client.query(
@@ -282,7 +302,7 @@ describe("resolving the stored roster", () => {
     );
     await resolveContentGames();
 
-    expect((await gameOf(post)).game_id).toBe(mobileId);
+    expect((await gameOf(post)).game_id).toBeNull();
   });
 
   it("changes nothing at all when no games are configured", async () => {

@@ -33,17 +33,18 @@ export const maxDuration = 120;
  *
  * ## How a post reaches a game
  *
- * Two routes, in this order:
+ * One route: a hashtag in the post's own text names a registered game.
+ * Everything else is left unattributed and reachable through the "Not
+ * Registered Games" filter.
  *
- *  1. A hashtag in the post's own text names a game. This wins, always — a
- *     streamer who covers three titles is telling you which one this post is
- *     about, and no default should override that.
- *  2. Otherwise the post inherits its streamer's primary game.
- *
- * Rule 2 is what makes the feature usable on the data that already exists.
- * Measured on this project's own posts, 102 of 1,624 carry any hashtag at all —
- * hashtag matching alone would leave 94% of the archive unattributed, and a
- * filter that hides most of the content is not a filter anyone would use.
+ * It used to have a second route — an untagged post inherited its streamer's
+ * primary game — justified by coverage, since only about one post in sixteen
+ * carries a hashtag. That bought coverage by guessing, and the guess turned
+ * into an assertion about every individual post: a Roblox stream was filed as
+ * "Cabal: Infinite Combo SEA", and filtering for Cabal returned it. A filter
+ * that answers wrongly is worse than one that admits a gap, because an unfiled
+ * post is a visible thing somebody can fix by registering a game or adding a
+ * hashtag, while a wrongly filed one is a silent error inside a reported number.
  *
  * Attribution is recomputed on every save rather than nightly, because an admin
  * who adds a tag and sees nothing change reasonably concludes it is broken.
@@ -74,9 +75,10 @@ async function Registry() {
               {unattributed === 1 ? "" : "s"} under no registered game
             </CardTitle>
             <CardDescription>
-              Posts and videos with no matching hashtag, published by a streamer with no primary
-              game. They still appear everywhere they did before — they simply cannot be reached by
-              a game filter. Setting a primary game on those streamers is usually the fastest fix.
+              Posts and videos whose text names no registered game. They still appear everywhere
+              they did before — they simply cannot be reached by a game filter. Registering the
+              game they are about, or adding the hashtag they already use to a game you have, is
+              what moves them.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -129,11 +131,11 @@ export default async function GamesPage() {
         <CardHeader>
           <CardTitle className="text-base">How content is filed</CardTitle>
           <CardDescription>
-            A hashtag in the post&apos;s own text wins — a streamer covering several titles is
-            telling you which one that post is about. Anything without a matching hashtag falls back
-            to the streamer&apos;s primary game, which is what makes the archive filterable at all:
-            only about one post in sixteen carries a hashtag. Content matching neither is left
-            unattributed rather than guessed at.
+            A hashtag in the post&apos;s own text decides it, and nothing else does. Content whose
+            text names no registered game is left unattributed rather than guessed at — it stays
+            visible everywhere, and is reachable through the &ldquo;Not Registered Games&rdquo;
+            filter. A streamer&apos;s assigned games describe who they are, not what any single post
+            is about, so they no longer file content.
           </CardDescription>
         </CardHeader>
       </Card>
