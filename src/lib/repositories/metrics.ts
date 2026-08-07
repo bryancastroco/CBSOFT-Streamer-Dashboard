@@ -4,9 +4,17 @@ import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
-import { gameClause } from "@/lib/db/game-filter";
-import { tsParam, tsResult } from "@/lib/db/params";
-import { commentSummaries, comments, posts, streamers, videos } from "@/lib/db/schema";
+import { gameClause, streamerGameClause } from "@/lib/db/game-filter";
+import { resultRows, tsParam, tsResult } from "@/lib/db/params";
+import {
+  commentSummaries,
+  comments,
+  games,
+  posts,
+  streamerGames,
+  streamers,
+  videos,
+} from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
 import { scopeIncludesPosts, scopeIncludesVideos } from "@/lib/filters/period";
 
@@ -268,6 +276,8 @@ export type StreamerRosterRow = {
   videoCount: number;
   summaryCount: number;
   urgentCount: number;
+  /** Titles this streamer covers, primary first. Empty when none are assigned. */
+  games: { name: string; isPrimary: boolean }[];
 };
 
 /**
@@ -278,16 +288,43 @@ export type StreamerRosterRow = {
  * caller decides whether the viewer is allowed to see it. The stored ciphertext
  * column is not selected, here or anywhere in this file.
  */
+/** The raw shape of the roster query, before it is mapped to camelCase. */
+type RosterQueryRow = {
+  id: string;
+  streamer_code: string;
+  streamer_name: string;
+  page_name: string;
+  page_id: string;
+  active: boolean;
+  token_status: string;
+  last_successful_sync_at: Date | null;
+  post_count: number;
+  video_count: number;
+  summary_count: number;
+  urgent_count: number;
+  games: { name: string; primary: boolean }[] | null;
+};
+
 export async function listStreamerRoster(params: {
   from?: Date | null;
   to?: Date | null;
   search?: string | undefined;
+  /** A game id, or `ANY_GAME` / `UNFILED_GAME`. See `streamerGameClause`. */
+  gameId?: string | undefined;
 }): Promise<StreamerRosterRow[]> {
   const db = getDb();
 
   const from = params.from ?? null;
   const to = params.to ?? null;
   const search = params.search ? `%${params.search}%` : null;
+
+  /*
+   * Filters the roster by who *covers* a game, not by what they published.
+   * A streamer assigned to Cabal belongs in a Cabal-filtered roster even in a
+   * week they posted nothing, because the question here is "who is on this
+   * title", not "who was active".
+   */
+  const game = streamerGameClause(sql`streamers.id`, params.gameId);
 
   // Correlated subqueries rather than joins: joining four child tables to one
   // roster row would multiply the rows and force a `group by` over every
@@ -303,20 +340,7 @@ export async function listStreamerRoster(params: {
   // Tables are referenced unaliased throughout: `hasUrgentIssue` is built from
   // Drizzle column objects, which render as `"comment_summaries"."…"`, and an
   // alias would put that name out of scope.
-  const rows = await db.execute<{
-    id: string;
-    streamer_code: string;
-    streamer_name: string;
-    page_name: string;
-    page_id: string;
-    active: boolean;
-    token_status: string;
-    last_successful_sync_at: Date | null;
-    post_count: number;
-    video_count: number;
-    summary_count: number;
-    urgent_count: number;
-  }>(sql`
+  const rows = await db.execute<RosterQueryRow>(sql`
     select
       streamers.id,
       streamers.streamer_code,
@@ -351,9 +375,30 @@ export async function listStreamerRoster(params: {
         where coalesce(posts.streamer_id, videos.streamer_id) = streamers.id
           and ${hasUrgentIssue}
           and ${inWindow(sql`coalesce(posts.created_time, videos.created_time)`)}
-      ) as urgent_count
+      ) as urgent_count,
+      (
+        /*
+         * Aggregated here rather than fetched per row. The roster is one query
+         * and a second round trip per streamer would make it N+1 for a column
+         * that is decoration on a page listing seven people.
+         *
+         * Primary first, then alphabetical, so the badge order is stable
+         * between renders and the one that matters is leftmost.
+         */
+        select coalesce(
+          json_agg(
+            json_build_object('name', g.name, 'primary', sg.is_primary)
+            order by sg.is_primary desc, g.name asc
+          ),
+          '[]'::json
+        )
+        from ${streamerGames} sg
+        join ${games} g on g.id = sg.game_id
+        where sg.streamer_id = streamers.id
+      ) as games
     from ${streamers}
     where streamers.deleted_at is null
+      ${game ? sql`and ${game}` : sql``}
       and (
         ${search}::text is null
         or streamers.streamer_name ilike ${search}
@@ -364,7 +409,13 @@ export async function listStreamerRoster(params: {
     order by streamers.streamer_code asc
   `);
 
-  return [...rows].map((row) => ({
+  /*
+   * `resultRows`, not a spread. `db.execute` returns a different shape by
+   * driver — an array under postgres.js, `{ rows }` under PGlite — and the
+   * spread worked in production while making this function untestable against
+   * a real database. The helper exists for exactly that difference.
+   */
+  return resultRows<RosterQueryRow>(rows).map((row) => ({
     id: row.id,
     streamerCode: row.streamer_code,
     streamerName: row.streamer_name,
@@ -379,6 +430,9 @@ export async function listStreamerRoster(params: {
     videoCount: Number(row.video_count ?? 0),
     summaryCount: Number(row.summary_count ?? 0),
     urgentCount: Number(row.urgent_count ?? 0),
+    games: Array.isArray(row.games)
+      ? row.games.map((entry) => ({ name: entry.name, isPrimary: Boolean(entry.primary) }))
+      : [],
   }));
 }
 

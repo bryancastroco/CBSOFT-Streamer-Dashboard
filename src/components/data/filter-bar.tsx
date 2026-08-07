@@ -79,6 +79,15 @@ export type FilterBarOptions = {
    * does not is worse than no control.
    */
   showStreamer?: boolean;
+  /**
+   * Wording for the three set-valued game entries.
+   *
+   * The rows underneath decide what they mean. On a content screen "All games"
+   * is content filed under the catalogue; on the roster the rows are people, so
+   * the same value means "streamers assigned to a game" and saying "All games"
+   * there describes nothing on the page.
+   */
+  gameLabels?: { all?: string; any?: string; none?: string };
   /** Hide the posts/videos switch on screens that are already one or the other. */
   showScope?: boolean;
   /** Hide the search box on screens with nothing to search. */
@@ -159,6 +168,12 @@ export function FilterBar<K extends string>({
   const games = options.games ?? [];
   const showAllContent = options.showAllContent ?? false;
   const showUnregistered = options.showUnregistered ?? false;
+
+  // Content wording by default, because every screen but the roster lists
+  // content.
+  const gameAllLabel = options.gameLabels?.all ?? "All content";
+  const gameAnyLabel = options.gameLabels?.any ?? "All games";
+  const gameNoneLabel = options.gameLabels?.none ?? "Not registered games";
 
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -262,9 +277,9 @@ export function FilterBar<K extends string>({
                * Which of those a workspace is in is not something this code can
                * tell, so it is the admin's to say.
                */}
-              {showAllContent ? <option value={ALL_CONTENT}>All content</option> : null}
+              {showAllContent ? <option value={ALL_CONTENT}>{gameAllLabel}</option> : null}
 
-              <option value={ANY_GAME}>All games</option>
+              <option value={ANY_GAME}>{gameAnyLabel}</option>
               {games.map((game) => (
                 <option key={game.id} value={game.id}>
                   {game.name}
@@ -279,12 +294,12 @@ export function FilterBar<K extends string>({
                * a control lying about the rows underneath it.
                */}
               {showUnregistered || query.gameId === UNFILED_GAME ? (
-                <option value={UNFILED_GAME}>Not registered games</option>
+                <option value={UNFILED_GAME}>{gameNoneLabel}</option>
               ) : null}
 
               {/* Same reasoning, for a link that predates the setting. */}
               {!showAllContent && query.gameId === ALL_CONTENT ? (
-                <option value={ALL_CONTENT}>All content</option>
+                <option value={ALL_CONTENT}>{gameAllLabel}</option>
               ) : null}
             </select>
           </div>

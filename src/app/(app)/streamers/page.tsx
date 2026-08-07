@@ -20,11 +20,17 @@ import {
 } from "@/components/ui/table";
 import { requireUser } from "@/lib/auth/guards";
 import { isAdmin } from "@/lib/auth/roles";
-import { buildBrowseHref, resolveBrowseQuery, type RawParams } from "@/lib/filters/browse";
+import {
+  ALL_CONTENT,
+  buildBrowseHref,
+  resolveBrowseQuery,
+  type RawParams,
+} from "@/lib/filters/browse";
 import type { SortState } from "@/lib/filters/sorting";
 import { isTokenStatus } from "@/lib/meta/token-status";
 import { listStreamerRoster } from "@/lib/repositories/metrics";
 import { listStreamerOptions } from "@/lib/repositories/streamers";
+import { getGameFilterView } from "@/lib/services/game-filter-view";
 import { formatDateTime } from "@/lib/time/zone";
 import { DISPLAY_TIME_ZONE_LABEL } from "@/lib/time/zone";
 
@@ -47,20 +53,30 @@ function formatWhen(value: Date | null): string {
   return formatDateTime(value);
 }
 
-async function RosterTable({ params, showTokens }: { params: RawParams; showTokens: boolean }) {
+async function RosterTable({
+  params,
+  showTokens,
+  defaultGameId,
+}: {
+  params: RawParams;
+  showTokens: boolean;
+  defaultGameId: string | undefined;
+}) {
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: SORT_KEYS,
     defaultSort: DEFAULT_SORT,
+    defaultGameId,
   });
 
   const rows = await listStreamerRoster({
     from: query.period.from,
     to: query.period.to,
     search: query.search,
+    gameId: query.gameId,
   });
 
-  const columnCount = showTokens ? 8 : 7;
+  const columnCount = showTokens ? 9 : 8;
 
   return (
     <Card>
@@ -78,6 +94,9 @@ async function RosterTable({ params, showTokens }: { params: RawParams; showToke
                   Facebook Page
                 </TableHead>
                 <TableHead scope="col">Status</TableHead>
+                <TableHead scope="col" className="hidden lg:table-cell">
+                  Games
+                </TableHead>
                 {showTokens ? (
                   <TableHead scope="col" className="hidden lg:table-cell">
                     Token
@@ -123,6 +142,34 @@ async function RosterTable({ params, showTokens }: { params: RawParams; showToke
                     <p className="mt-1 text-xs whitespace-nowrap text-muted-foreground">
                       Synced {formatWhen(row.lastSuccessfulSyncAt)}
                     </p>
+                  </TableCell>
+
+                  {/*
+                   * The titles this streamer covers, primary first.
+                   *
+                   * An assignment, not a derivation from their content: a
+                   * streamer on Cabal belongs to Cabal in a week they published
+                   * nothing. Since attribution stopped inheriting the primary
+                   * game, this is the only place the assignment is visible
+                   * outside the admin screens — and it is what the Game filter
+                   * above matches on.
+                   */}
+                  <TableCell className="hidden align-top lg:table-cell">
+                    {row.games.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">None assigned</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {row.games.map((game) => (
+                          <Badge
+                            key={game.name}
+                            variant={game.isPrimary ? "secondary" : "outline"}
+                            className="text-xs font-normal"
+                          >
+                            {game.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </TableCell>
 
                   {/*
@@ -223,12 +270,22 @@ export default async function StreamersPage({
   const user = await requireUser();
 
   const params = await searchParams;
+  const [streamers, gameFilter] = await Promise.all([listStreamerOptions(), getGameFilterView()]);
+
+  // Resolved after the view, for the same reason as every other filtered
+  // screen: the default it substitutes depends on whether any game exists.
   const query = resolveBrowseQuery({
     raw: params,
     sortKeys: SORT_KEYS,
     defaultSort: DEFAULT_SORT,
+    /*
+     * Not `gameFilter.defaultGameId`. That resolves to "all games", which on
+     * this page means "streamers who have one assigned" — and would open the
+     * roster with the four unassigned streamers missing, which are exactly the
+     * ones somebody came here to fix.
+     */
+    defaultGameId: ALL_CONTENT,
   });
-  const streamers = await listStreamerOptions();
 
   return (
     <>
@@ -243,6 +300,19 @@ export default async function StreamersPage({
         defaultSort={DEFAULT_SORT}
         options={{
           streamers,
+          games: gameFilter.games,
+          /*
+           * The neutral option is always offered here, whatever the admin set
+           * for content screens, because it is this page's default — a roster
+           * that opens hiding four of seven streamers is not a roster.
+           */
+          showAllContent: true,
+          showUnregistered: gameFilter.showUnregistered,
+          gameLabels: {
+            all: "All streamers",
+            any: "Assigned to a game",
+            none: "No game assigned",
+          },
           showScope: false,
           searchPlaceholder: "Name, code, Page name or Page id…",
         }}
@@ -258,7 +328,11 @@ export default async function StreamersPage({
           </Card>
         }
       >
-        <RosterTable params={params} showTokens={isAdmin(user.role)} />
+        <RosterTable
+          params={params}
+          showTokens={isAdmin(user.role)}
+          defaultGameId={ALL_CONTENT}
+        />
       </Suspense>
 
       <p className="text-xs text-muted-foreground">

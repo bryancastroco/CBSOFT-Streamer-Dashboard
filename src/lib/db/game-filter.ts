@@ -44,3 +44,40 @@ export function gameClause(
   if (gameId === UNFILED_GAME) return sql`${column} is null`;
   return sql`${column} = ${gameId}::uuid`;
 }
+
+/**
+ * The same filter, applied to a *streamer* rather than a piece of content.
+ *
+ * Content carries `game_id` directly; a streamer carries an assignment in
+ * `streamer_games`, so the equality above cannot be reused. The four inputs
+ * keep their meanings, translated to "who covers this":
+ *
+ *   ALL_CONTENT   every streamer
+ *   ANY_GAME      streamers with at least one game assigned
+ *   a uuid        streamers assigned that game
+ *   UNFILED_GAME  streamers with no game at all
+ *
+ * `UNFILED_GAME` is the useful one on a roster screen and has no equivalent
+ * anywhere else: it answers "whose games has nobody set up yet", which is the
+ * question behind most content that cannot be filtered.
+ *
+ * Takes the streamer id column so a caller can pass an alias, matching
+ * `gameClause`.
+ */
+export function streamerGameClause(
+  streamerIdColumn: AnyColumn | SQL,
+  gameId: string | null | undefined,
+): SQL | undefined {
+  if (!gameId || gameId === ALL_CONTENT) return undefined;
+
+  const assigned = (extra: SQL | null) => sql`exists (
+    select 1 from streamer_games sg
+     where sg.streamer_id = ${streamerIdColumn}
+     ${extra ? sql`and ${extra}` : sql``}
+  )`;
+
+  if (gameId === ANY_GAME) return assigned(null);
+  if (gameId === UNFILED_GAME) return sql`not ${assigned(null)}`;
+
+  return assigned(sql`sg.game_id = ${gameId}::uuid`);
+}
