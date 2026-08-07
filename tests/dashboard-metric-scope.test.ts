@@ -1,0 +1,132 @@
+import type { PGlite } from "@electric-sql/pglite";
+import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import * as schema from "@/lib/db/schema";
+import { CONTENT_SCOPES, type ContentScope } from "@/lib/filters/period";
+
+import { createTestDatabase } from "./helpers/test-database";
+import { FAKE_PAGE_ID } from "./fixtures/meta";
+
+/**
+ * What the dashboard's cards count, under each Content scope.
+ *
+ * ## The bug this was written after
+ *
+ * `getDashboardMetrics` decided which tables to read with
+ * `scope === "all" || scope === "videos"`. A fourth scope was added and that
+ * line matched neither of its values, so selecting Livestreams skipped the
+ * video aggregate entirely and the card reported **0** on a week holding six
+ * broadcasts.
+ *
+ * It survived a full green test run, and it would survive another one written
+ * carelessly, because zero is a plausible number. Nothing throws, nothing looks
+ * malformed — the dashboard simply says there is no content and the reader
+ * believes it.
+ *
+ * So this asserts every scope against a known fixture, including the scopes
+ * that were already working. A test covering only the broken one would pass the
+ * day someone adds a fifth.
+ */
+
+const holder = vi.hoisted(() => ({ db: null as PgliteDatabase<typeof schema> | null }));
+
+vi.mock("@/lib/db", () => ({
+  getDb: () => {
+    if (!holder.db) throw new Error("test database not ready");
+    return holder.db;
+  },
+}));
+
+const { getDashboardMetrics } = await import("@/lib/repositories/metrics");
+
+let client: PGlite;
+let streamerId: string;
+
+const PAGE = "102942398708927";
+
+async function seedVideo(videoId: string, kind: "video" | "livestream"): Promise<string> {
+  const row = await client.query<{ id: string }>(
+    `insert into videos (streamer_id, facebook_video_id, created_time, media_kind, raw_json)
+     values ($1, $2, now(), $3, '{}'::jsonb) returning id`,
+    [streamerId, videoId, kind],
+  );
+  return row.rows[0]!.id;
+}
+
+async function seedPost(handle: string, videoRowId: string | null): Promise<void> {
+  await client.query(
+    `insert into posts (streamer_id, facebook_post_id, created_time, message, video_id,
+                        reaction_count, raw_json)
+     values ($1, $2, now(), 'hello', $3, 5, '{}'::jsonb)`,
+    [streamerId, `${PAGE}_${handle}`, videoRowId],
+  );
+}
+
+const counts = async (scope: ContentScope) => {
+  const metrics = await getDashboardMetrics({ scope });
+  return { posts: metrics.postsCollected, videos: metrics.videosCollected };
+};
+
+beforeAll(async () => {
+  client = await createTestDatabase();
+  holder.db = drizzle(client, { schema });
+});
+
+afterAll(async () => {
+  await client?.close();
+});
+
+beforeEach(async () => {
+  await client.query("delete from streamers");
+
+  const streamer = await client.query<{ id: string }>(
+    `insert into streamers (streamer_code, streamer_name, page_id, page_name)
+     values ('STM-001', 'Bladz', $1, 'Bladz') returning id`,
+    [FAKE_PAGE_ID],
+  );
+  streamerId = streamer.rows[0]!.id;
+
+  // Two plain posts, one reel, one broadcast — and the broadcast's feed story,
+  // which is a row in `posts` that is not a post.
+  await seedPost("plain-1", null);
+  await seedPost("plain-2", null);
+  await seedVideo("reel-1", "video");
+  const live = await seedVideo("live-1", "livestream");
+  await seedPost("live-1", live);
+});
+
+describe("every scope counts the right things", () => {
+  it("counts all content without the duplicate", async () => {
+    // Five rows exist across the two tables; four are content.
+    expect(await counts("all")).toEqual({ posts: 2, videos: 2 });
+  });
+
+  it("counts posts without the broadcast's feed story", async () => {
+    // Three rows in `posts`, two of them posts. This builder was the one place
+    // still counting the third.
+    expect(await counts("posts")).toEqual({ posts: 2, videos: 0 });
+  });
+
+  it("counts videos without the broadcast", async () => {
+    expect(await counts("videos")).toEqual({ posts: 0, videos: 1 });
+  });
+
+  it("counts the broadcast under livestreams", async () => {
+    // The regression, exactly: this reported 0.
+    expect(await counts("livestreams")).toEqual({ posts: 0, videos: 1 });
+  });
+
+  it("reports a non-zero video count for every scope that includes videos", async () => {
+    /*
+     * Guards the shape of the bug rather than its instance. Any future scope
+     * that reads videos and silently returns none fails here, whatever it is
+     * called — which is what a test of only the four known values would miss.
+     */
+    for (const scope of CONTENT_SCOPES) {
+      const { videos } = await counts(scope);
+      if (scope === "posts") expect(videos).toBe(0);
+      else expect(videos).toBeGreaterThan(0);
+    }
+  });
+});

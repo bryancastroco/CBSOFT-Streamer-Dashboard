@@ -4,6 +4,7 @@ import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
+import { excludeFeedStories, mediaKindClause } from "@/lib/db/content-kind";
 import { gameClause, streamerGameClause } from "@/lib/db/game-filter";
 import { resultRows, tsParam, tsResult } from "@/lib/db/params";
 import {
@@ -102,7 +103,13 @@ function toTotal(sum: string | number | null, reported: number, missing: number)
 }
 
 function postWindow(filters: MetricsFilters): SQL[] {
-  const conditions: SQL[] = [];
+  /*
+   * A broadcast's feed story is not a post, here as everywhere else. It was
+   * missing from this builder alone, so every dashboard post count included
+   * the 33 duplicates while the Posts list — which does exclude them — showed
+   * fewer. Two screens disagreeing about how many posts exist.
+   */
+  const conditions: SQL[] = [excludeFeedStories(posts.videoId)];
   if (filters.streamerId) conditions.push(eq(posts.streamerId, filters.streamerId));
   const game = gameClause(posts.gameId, filters.gameId);
   if (game) conditions.push(game);
@@ -114,6 +121,10 @@ function postWindow(filters: MetricsFilters): SQL[] {
 
 function videoWindow(filters: MetricsFilters): SQL[] {
   const conditions: SQL[] = [];
+
+  const kind = mediaKindClause(videos.mediaKind, filters.scope ?? "all");
+  if (kind) conditions.push(kind);
+
   if (filters.streamerId) conditions.push(eq(videos.streamerId, filters.streamerId));
   const game = gameClause(videos.gameId, filters.gameId);
   if (game) conditions.push(game);
@@ -222,8 +233,18 @@ async function countSummaries(
 export async function getDashboardMetrics(filters: MetricsFilters = {}): Promise<DashboardMetrics> {
   const db = getDb();
   const scope = filters.scope ?? "all";
-  const includePosts = scope === "all" || scope === "posts";
-  const includeVideos = scope === "all" || scope === "videos";
+
+  /*
+   * Through the helpers, not a comparison against literals.
+   *
+   * This was `scope === "all" || scope === "videos"`, which "livestreams"
+   * matches neither of — so the video aggregate was skipped entirely and the
+   * card reported 0 broadcasts on a week containing six. It is the exact
+   * failure the helpers exist to prevent, and the reason it survived a full
+   * test run is that zero is a plausible answer.
+   */
+  const includePosts = scopeIncludesPosts(scope);
+  const includeVideos = scopeIncludesVideos(scope);
 
   const [roster, postAgg, videoAgg, summaryAgg] = await Promise.all([
     // Soft-deleted streamers are excluded: the row exists so sync history stays
