@@ -12,12 +12,8 @@ import {
   Video,
 } from "lucide-react";
 
-import {
-  EngagementChart,
-  SentimentChart,
-  TopStreamersChart,
-  VolumeChart,
-} from "@/components/dashboard/charts";
+import { SentimentChart, VolumeChart } from "@/components/dashboard/charts";
+import { StreamerLeaderboards } from "@/components/dashboard/leaderboards";
 import {
   MetricTile,
   RecentContent,
@@ -46,7 +42,7 @@ import {
   getSentimentDistribution,
   getTimeSeries,
   getTokenHealth,
-  getTopStreamers,
+  getStreamerTotals,
   listRecentContent,
   listUrgentIssues,
   type DashboardFilters,
@@ -215,7 +211,7 @@ async function Metrics({ params, defaultGameId }: SectionProps) {
 /** Engagement, publishing mix and the leaders — four charts, not eight. */
 async function Performance({ params, defaultGameId }: SectionProps) {
   const filters = filtersFrom(params, defaultGameId);
-  const [series, top] = await Promise.all([getTimeSeries(filters), getTopStreamers(filters)]);
+  const [series, totals] = await Promise.all([getTimeSeries(filters), getStreamerTotals(filters)]);
 
   if (series.length === 0) {
     return (
@@ -227,39 +223,18 @@ async function Performance({ params, defaultGameId }: SectionProps) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Engagement over time</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <EngagementChart data={series} />
-          {/*
-           * Said plainly rather than left for the reader to discover. Videos
-           * keep their metrics in video_insights under different metric names,
-           * so folding them into this line would sum two unlike things.
-           */}
-          <p className="mt-2 text-xs text-muted-foreground">
-            Reactions, comments and shares come from posts. Video engagement is reported by Meta
-            under a different set of metrics and is not summed here.
-          </p>
-        </CardContent>
-      </Card>
+    <div className="space-y-4">
+      {/*
+       * Seven boards where an engagement line and one bar chart used to be.
+       *
+       * That chart ranked on reactions + comments + shares added together —
+       * three units summed into a figure that is none of them — and it was the
+       * only ranking on the page, so whoever led on views or on broadcasts did
+       * not appear at all.
+       */}
+      <StreamerLeaderboards totals={totals} />
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Top streamers</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {top.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No post engagement in this period.</p>
-          ) : (
-            <TopStreamersChart data={top} />
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-3">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Content volume</CardTitle>
         </CardHeader>

@@ -22,14 +22,29 @@ export type TimeSeriesPoint = {
   videoCount: number;
 };
 
-export type TopStreamer = {
+export type SentimentSlice = { sentiment: string; count: number };
+
+/**
+ * One streamer's totals across every metric the leaderboards rank on.
+ *
+ * A single row per streamer rather than seven ranked lists from the server: the
+ * roster is small, the sorting is trivial, and seven queries that each pick
+ * their own top few would disagree about who exists whenever a streamer scores
+ * on one metric and not another.
+ */
+export type StreamerTotals = {
   streamerId: string;
   streamerName: string;
   streamerCode: string;
+  postCount: number;
+  videoCount: number;
+  livestreamCount: number;
+  /** From canonical metrics — the only source that spans posts and videos. */
+  views: number;
   reactions: number;
   comments: number;
   shares: number;
-  postCount: number;
 };
 
-export type SentimentSlice = { sentiment: string; count: number };
+/** Which metric a leaderboard ranks on. */
+export type LeaderboardMetric = Exclude<keyof StreamerTotals, `streamer${string}`>;

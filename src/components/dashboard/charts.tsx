@@ -16,16 +16,23 @@ import {
   YAxis,
 } from "recharts";
 
-import type { SentimentSlice, TimeSeriesPoint, TopStreamer } from "@/lib/ui/dashboard-shapes";
+import type { SentimentSlice, TimeSeriesPoint } from "@/lib/ui/dashboard-shapes";
 import { describeStatus } from "@/lib/ui/status";
 import { formatDayLabel } from "@/lib/time/zone";
 
 /**
  * The dashboard's charts.
  *
- * Four, not eight. Every metric in its own chart is a wall of panels that
- * answers no question; these each answer one — how engagement moved, what the
- * mix of publishing was, who is carrying the roster, and how audiences feel.
+ * Each answers one question — what the mix of publishing was, how audiences
+ * feel, how the following moved. A chart per metric is a wall of panels that
+ * answers none.
+ *
+ * Two left when the leaderboards arrived. "Engagement over time" plotted three
+ * series a reader could not act on, and "Top streamers" ranked on reactions,
+ * comments and shares added together — three units summed into a figure that is
+ * none of them. `components/dashboard/leaderboards.tsx` replaced both with one
+ * ranking per metric, which is the question people were asking of that corner
+ * of the screen.
  *
  * Colours come from the chart tokens rather than Recharts' defaults, so the
  * series match the rest of the product and follow the theme into dark mode.
@@ -57,51 +64,6 @@ const TOOLTIP_STYLE = {
 // display zone; see `formatDayLabel` for why this must not convert again.
 const shortDay = formatDayLabel;
 
-/**
- * Engagement over time.
- *
- * Posts only — videos do not carry comparable engagement columns, and the
- * caller says so beneath the chart rather than letting the reader assume the
- * line covers everything.
- */
-export function EngagementChart({ data }: { data: TimeSeriesPoint[] }) {
-  return (
-    <ResponsiveContainer width="100%" height={240}>
-      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="day" tickFormatter={shortDay} {...AXIS} minTickGap={24} />
-        <YAxis {...AXIS} width={44} allowDecimals={false} />
-        <Tooltip {...TOOLTIP_STYLE} labelFormatter={(label) => shortDay(String(label))} />
-        <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
-        <Line
-          type="monotone"
-          dataKey="reactions"
-          name="Reactions"
-          stroke="var(--chart-1)"
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          type="monotone"
-          dataKey="comments"
-          name="Comments"
-          stroke="var(--chart-2)"
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          type="monotone"
-          dataKey="shares"
-          name="Shares"
-          stroke="var(--chart-3)"
-          strokeWidth={2}
-          dot={false}
-        />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
 /** Publishing volume: posts against videos, stacked because it is a mix. */
 export function VolumeChart({ data }: { data: TimeSeriesPoint[] }) {
   return (
@@ -130,36 +92,6 @@ export function VolumeChart({ data }: { data: TimeSeriesPoint[] }) {
           fill="var(--chart-4)"
           radius={[3, 3, 0, 0]}
         />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-/** Top streamers by total engagement. Horizontal, so long names stay readable. */
-export function TopStreamersChart({ data }: { data: TopStreamer[] }) {
-  const rows = data.map((row) => ({
-    name: row.streamerName,
-    total: row.reactions + row.comments + row.shares,
-  }));
-
-  return (
-    <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 38)}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}>
-        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" horizontal={false} />
-        <XAxis type="number" {...AXIS} allowDecimals={false} />
-        {/*
-         * A generous width and truncation, because a streamer name can be long
-         * and a clipped label is worse than an elided one.
-         */}
-        <YAxis
-          type="category"
-          dataKey="name"
-          {...AXIS}
-          width={110}
-          tickFormatter={(value: string) => (value.length > 16 ? `${value.slice(0, 15)}…` : value)}
-        />
-        <Tooltip {...TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
-        <Bar dataKey="total" name="Engagement" fill="var(--chart-1)" radius={[0, 3, 3, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

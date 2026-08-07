@@ -41,6 +41,7 @@ vi.mock("@/lib/db", () => ({
 const { getDashboardMetrics, getStreamerOverview } = await import(
   "@/lib/repositories/metrics",
 );
+const { getStreamerTotals } = await import("@/lib/repositories/dashboard");
 
 let client: PGlite;
 let streamerId: string;
@@ -168,5 +169,50 @@ describe("the streamer overview", () => {
     // feed story, already counted as a livestream.
     expect(overview.postCount).toBe(2);
     expect(overview.postCount + overview.videoCount + overview.livestreamCount).toBe(4);
+  });
+});
+
+/**
+ * The per-streamer totals behind the leaderboards.
+ *
+ * Three queries merged by streamer id rather than joined, because posts, videos
+ * and canonical metrics each have their own row-per-item and joining them would
+ * multiply every sum by whatever the other tables happened to hold. Merging is
+ * arithmetic that cannot go subtly wrong; this checks it did not.
+ */
+describe("streamer totals for the leaderboards", () => {
+  const forStreamer = async () => {
+    const rows = await getStreamerTotals({ period: { from: null, to: null }, scope: "all" });
+    return rows.find((row) => row.streamerId === streamerId);
+  };
+
+  it("merges counts from all three sources onto one row", async () => {
+    const totals = await forStreamer();
+
+    expect(totals?.postCount).toBe(2);
+    expect(totals?.videoCount).toBe(1);
+    expect(totals?.livestreamCount).toBe(1);
+  });
+
+  it("sums post engagement without the broadcast's feed story", async () => {
+    // Three rows in `posts` carry five reactions each; only two are posts.
+    const totals = await forStreamer();
+
+    expect(totals?.reactions).toBe(10);
+  });
+
+  it("returns one row per streamer, not one per source", async () => {
+    const rows = await getStreamerTotals({ period: { from: null, to: null }, scope: "all" });
+
+    expect(rows.filter((row) => row.streamerId === streamerId)).toHaveLength(1);
+  });
+
+  it("gives a streamer with no metrics row a zero rather than dropping them", async () => {
+    // Nothing seeds `content_metrics_current`, so views is the field that would
+    // expose a merge built on the metrics query rather than on the roster.
+    const totals = await forStreamer();
+
+    expect(totals?.views).toBe(0);
+    expect(totals).toBeDefined();
   });
 });

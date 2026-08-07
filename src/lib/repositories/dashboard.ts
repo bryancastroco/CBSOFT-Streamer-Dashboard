@@ -8,13 +8,23 @@ import { excludeFeedStories, mediaKindClause } from "@/lib/db/content-kind";
 import { displayDayText, displayDay } from "@/lib/db/display-day";
 import { gameClause } from "@/lib/db/game-filter";
 import { tsParam } from "@/lib/db/params";
-import { commentSummaries, posts, streamers, videos } from "@/lib/db/schema";
+import {
+  commentSummaries,
+  contentMetricsCurrent,
+  posts,
+  streamers,
+  videos,
+} from "@/lib/db/schema";
 import {
   scopeIncludesPosts,
   scopeIncludesVideos,
   type ContentScope,
 } from "@/lib/filters/period";
-import type { SentimentSlice, TimeSeriesPoint, TopStreamer } from "@/lib/ui/dashboard-shapes";
+import type {
+  SentimentSlice,
+  StreamerTotals,
+  TimeSeriesPoint,
+} from "@/lib/ui/dashboard-shapes";
 import { getDashboardMetrics, type DashboardMetrics, type MetricsFilters } from "./metrics";
 
 /**
@@ -40,7 +50,7 @@ import { getDashboardMetrics, type DashboardMetrics, type MetricsFilters } from 
  * counts both, because a count of items is comparable.
  */
 
-export type { SentimentSlice, TimeSeriesPoint, TopStreamer };
+export type { SentimentSlice, StreamerTotals, TimeSeriesPoint };
 
 export type Period = { from: Date | null; to: Date | null };
 
@@ -228,43 +238,6 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
   return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
 }
 
-/**
- * Streamers ranked by post engagement in the window.
- *
- * Posts only, for the reason given at the top of this file. Limited to a
- * handful: a bar chart of forty streamers is a wall, not a finding.
- */
-export async function getTopStreamers(
-  filters: DashboardFilters,
-  limit = 6,
-): Promise<TopStreamer[]> {
-  const db = getDb();
-
-  const rows = await db
-    .select({
-      streamerId: streamers.id,
-      streamerName: streamers.streamerName,
-      streamerCode: streamers.streamerCode,
-      reactions: sql<number>`coalesce(sum(${posts.reactionCount}), 0)::int`,
-      comments: sql<number>`coalesce(sum(${posts.commentCount}), 0)::int`,
-      shares: sql<number>`coalesce(sum(${posts.shareCount}), 0)::int`,
-      postCount: sql<number>`count(${posts.id})::int`,
-    })
-    .from(posts)
-    .innerJoin(streamers, eq(streamers.id, posts.streamerId))
-    .where(
-      and(isNull(streamers.deletedAt), ...contentScope(posts, filters)),
-    )
-    .groupBy(streamers.id, streamers.streamerName, streamers.streamerCode)
-    .orderBy(
-      desc(
-        sql`coalesce(sum(${posts.reactionCount}), 0) + coalesce(sum(${posts.commentCount}), 0) + coalesce(sum(${posts.shareCount}), 0)`,
-      ),
-    )
-    .limit(limit);
-
-  return rows;
-}
 
 /** Sentiment distribution across analysed content in the window. */
 export async function getSentimentDistribution(
@@ -524,4 +497,140 @@ export async function listUrgentIssues(
       detectedAt: row.detectedAt,
     };
   });
+}
+
+/**
+ * Per-streamer totals for every leaderboard on the dashboard.
+ *
+ * ## Three passes, not one join
+ *
+ * Posts, videos and canonical metrics each have their own row-per-item, so
+ * joining them would multiply rows and make every sum wrong by whatever the
+ * other tables happened to contain. They are counted separately and merged by
+ * streamer id, which is arithmetic nobody can get subtly wrong.
+ *
+ * ## Why engagement comes from posts and views from metrics
+ *
+ * Because that is where the cards get them. Reactions, comments and shares are
+ * columns on `posts`, and taking them from `content_metrics_current` instead
+ * would produce leaderboards that quietly disagree with the totals above them
+ * on the same screen — two numbers for one thing is worse than one number with
+ * a caveat.
+ *
+ * `views` has no equivalent column and exists only in canonical metrics, which
+ * is also the one source spanning posts and videos. It is therefore the single
+ * figure here that includes video performance.
+ */
+export async function getStreamerTotals(filters: DashboardFilters): Promise<StreamerTotals[]> {
+  const db = getDb();
+
+  const [postRows, videoRows, metricRows] = await Promise.all([
+    db
+      .select({
+        streamerId: streamers.id,
+        streamerName: streamers.streamerName,
+        streamerCode: streamers.streamerCode,
+        postCount: sql<number>`count(${posts.id})::int`,
+        reactions: sql<number>`coalesce(sum(${posts.reactionCount}), 0)::int`,
+        comments: sql<number>`coalesce(sum(${posts.commentCount}), 0)::int`,
+        shares: sql<number>`coalesce(sum(${posts.shareCount}), 0)::int`,
+      })
+      .from(posts)
+      .innerJoin(streamers, eq(streamers.id, posts.streamerId))
+      .where(and(isNull(streamers.deletedAt), ...contentScope(posts, filters)))
+      .groupBy(streamers.id, streamers.streamerName, streamers.streamerCode),
+
+    db
+      .select({
+        streamerId: streamers.id,
+        streamerName: streamers.streamerName,
+        streamerCode: streamers.streamerCode,
+        videoCount: sql<number>`count(*) filter (where ${videos.mediaKind} = 'video')::int`,
+        livestreamCount: sql<number>`count(*) filter (where ${videos.mediaKind} = 'livestream')::int`,
+      })
+      .from(videos)
+      .innerJoin(streamers, eq(streamers.id, videos.streamerId))
+      .where(and(isNull(streamers.deletedAt), ...contentScope(videos, filters)))
+      .groupBy(streamers.id, streamers.streamerName, streamers.streamerCode),
+
+    db
+      .select({
+        streamerId: streamers.id,
+        streamerName: streamers.streamerName,
+        streamerCode: streamers.streamerCode,
+        views: sql<number>`coalesce(sum(${contentMetricsCurrent.views}), 0)::int`,
+      })
+      .from(contentMetricsCurrent)
+      .innerJoin(streamers, eq(streamers.id, contentMetricsCurrent.streamerId))
+      .leftJoin(posts, eq(posts.id, contentMetricsCurrent.postId))
+      .leftJoin(videos, eq(videos.id, contentMetricsCurrent.videoId))
+      .where(and(isNull(streamers.deletedAt), ...metricScope(filters)))
+      .groupBy(streamers.id, streamers.streamerName, streamers.streamerCode),
+  ]);
+
+  const byStreamer = new Map<string, StreamerTotals>();
+
+  const seat = (row: { streamerId: string; streamerName: string; streamerCode: string }) => {
+    const existing = byStreamer.get(row.streamerId);
+    if (existing) return existing;
+
+    const created: StreamerTotals = {
+      streamerId: row.streamerId,
+      streamerName: row.streamerName,
+      streamerCode: row.streamerCode,
+      postCount: 0,
+      videoCount: 0,
+      livestreamCount: 0,
+      views: 0,
+      reactions: 0,
+      comments: 0,
+      shares: 0,
+    };
+    byStreamer.set(row.streamerId, created);
+    return created;
+  };
+
+  for (const row of postRows) {
+    const total = seat(row);
+    total.postCount = row.postCount;
+    total.reactions = row.reactions;
+    total.comments = row.comments;
+    total.shares = row.shares;
+  }
+
+  for (const row of videoRows) {
+    const total = seat(row);
+    total.videoCount = row.videoCount;
+    total.livestreamCount = row.livestreamCount;
+  }
+
+  for (const row of metricRows) {
+    seat(row).views = row.views;
+  }
+
+  return [...byStreamer.values()];
+}
+
+/**
+ * Period, streamer and game predicates for a canonical metrics row.
+ *
+ * The row carries no publication time or attribution of its own — both come
+ * from whichever content table it points at, which is why this reaches through
+ * the joins rather than filtering the metrics table directly.
+ */
+function metricScope(filters: DashboardFilters): (SQL | undefined)[] {
+  const published = sql`coalesce(${posts.createdTime}, ${videos.createdTime})`;
+
+  return [
+    filters.streamerId ? eq(contentMetricsCurrent.streamerId, filters.streamerId) : undefined,
+    gameClause(sql`coalesce(${posts.gameId}, ${videos.gameId})`, filters.gameId),
+    // The feed story of a broadcast carries a metrics row that duplicates the
+    // video's. Counting both would rank a livestreaming Page twice as high.
+    sql`(${posts.videoId} is null or ${posts.id} is null)`,
+    mediaKindClause(videos.mediaKind, filters.scope),
+    filters.period.from
+      ? sql`${published} >= ${tsParam(filters.period.from)}::timestamptz`
+      : undefined,
+    filters.period.to ? sql`${published} <= ${tsParam(filters.period.to)}::timestamptz` : undefined,
+  ];
 }
