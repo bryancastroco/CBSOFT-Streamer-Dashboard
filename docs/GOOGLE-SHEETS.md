@@ -80,6 +80,18 @@ Match on **Post ID**.
 | 9 | Shares | integer | Blank = not reported. Meta omits this entirely on a post with none |
 | 10 | Permalink | url | |
 | 11 | Last Synced At | datetime | UTC |
+| 12 | Livestream Video ID | uuid | Blank on an ordinary post. Set on a broadcast's feed story |
+
+**A livestream appears on this tab and on `Videos`.** Facebook publishes a Page
+feed story alongside a live broadcast, so `/posts` and `/videos` both return it —
+33 rows of 286, when this was measured. Anything summing the two tabs counts
+those broadcasts twice.
+
+Column 12 is how to tell. Filter it to blanks for posts alone, or to non-blanks
+for the broadcasts and their comment counts. The rows are kept rather than
+filtered out because dropping them would silently shrink a tab that workflows
+already read; column 12 was appended for the same reason, so every column above
+holds its position.
 
 ### Tab 3 — `Post Insights`
 

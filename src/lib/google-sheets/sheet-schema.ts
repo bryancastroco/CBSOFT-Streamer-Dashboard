@@ -235,6 +235,13 @@ const postsTab = {
       type: "datetime",
       description: "UTC. When this row was last refreshed from Meta.",
     },
+    {
+      header: "Livestream Video ID",
+      sourceField: "video_id",
+      type: "uuid",
+      description:
+        "Filled only when this row is the feed story for a broadcast, which also appears on the Videos tab. Filter to blanks for posts alone; anything summing both tabs counts these twice.",
+    },
   ],
 } as const satisfies SheetTab<PostExportRow>;
 

@@ -178,6 +178,13 @@ const EXPECTED_COLUMNS: Record<ExportDataset, string[]> = {
     "insight_metric_count",
     "last_synced_at",
     "updated_at",
+    /*
+     * Appended, never inserted. Every column above holds its position, so a
+     * sheet or workflow reading by index is unaffected — which is the whole
+     * reason a broadcast's feed story is marked here rather than dropped from
+     * the tab.
+     */
+    "video_id",
   ],
   post_insights: [
     // Phase 9. The composite key the Sheets upsert matches on.

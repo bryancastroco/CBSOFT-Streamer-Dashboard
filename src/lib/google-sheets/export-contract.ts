@@ -101,6 +101,19 @@ export const postExportRowSchema = z.object({
   insight_metric_count: z.number().int().nonnegative(),
   last_synced_at: timestamp,
   updated_at: timestamp,
+  /**
+   * Set when this row is the Page-feed story for a video, and null otherwise.
+   *
+   * Facebook publishes a feed story alongside a live broadcast, so `/posts` and
+   * `/videos` both return it and this tab carries 33 rows that are also on the
+   * Videos tab. Anything summing both tabs counts those broadcasts twice.
+   *
+   * Appended rather than filtered out. Dropping the rows would silently shrink
+   * a tab that workflows already read and formulas already reference; a column
+   * lets a consumer say `video_id = ""` for posts alone, and leaves every
+   * existing column in the same position.
+   */
+  video_id: z.uuid().nullable(),
 });
 
 /**

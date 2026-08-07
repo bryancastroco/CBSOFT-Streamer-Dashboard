@@ -57,6 +57,8 @@ const EXPECTED_TABS: { tab: string; match: string; columns: string[] }[] = [
       "Shares",
       "Permalink",
       "Last Synced At",
+      // Appended so every column above keeps its position in the sheet.
+      "Livestream Video ID",
     ],
   },
   {
@@ -280,6 +282,8 @@ describe("projecting a row onto its tab", () => {
     insight_metric_count: 7,
     last_synced_at: "2026-07-30T03:02:19.884Z",
     updated_at: "2026-07-30T03:02:19.884Z",
+    // Null on an ordinary post; a uuid on the feed story of a broadcast.
+    video_id: null,
   };
 
   it("re-keys the row to the tab's headers", () => {

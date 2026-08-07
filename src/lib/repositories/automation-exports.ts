@@ -284,6 +284,7 @@ export async function exportPosts(filters: Filters): Promise<ExportPage<PostExpo
         metricCount: postMetricCount,
         lastSyncedAt: posts.lastSyncedAt,
         updatedAt: posts.updatedAt,
+        videoId: posts.videoId,
       })
       .from(posts)
       .innerJoin(streamers, eq(posts.streamerId, streamers.id))
@@ -317,6 +318,9 @@ export async function exportPosts(filters: Filters): Promise<ExportPage<PostExpo
       insight_metric_count: Number(row.metricCount ?? 0),
       last_synced_at: toIso(row.lastSyncedAt),
       updated_at: toIso(row.updatedAt),
+      // Non-null on the feed story of a broadcast. See the contract for why
+      // these rows stay in the tab rather than being filtered out of it.
+      video_id: row.videoId,
     })),
   };
 }
