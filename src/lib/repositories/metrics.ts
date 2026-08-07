@@ -319,7 +319,10 @@ export type StreamerRosterRow = {
   tokenStatus: string;
   lastSuccessfulSyncAt: Date | null;
   postCount: number;
+  /** Uploads and reels. Broadcasts are counted separately. */
   videoCount: number;
+  /** Recorded livestreams. Never included in `videoCount`. */
+  livestreamCount: number;
   summaryCount: number;
   urgentCount: number;
   /** Titles this streamer covers, primary first. Empty when none are assigned. */
@@ -346,6 +349,7 @@ type RosterQueryRow = {
   last_successful_sync_at: Date | null;
   post_count: number;
   video_count: number;
+  livestream_count: number;
   summary_count: number;
   urgent_count: number;
   games: { name: string; primary: boolean }[] | null;
@@ -401,11 +405,24 @@ export async function listStreamerRoster(params: {
         where posts.streamer_id = streamers.id
           and ${inWindow(sql`posts.created_time`)}
       ) as post_count,
+      /*
+        * Split, matching the dashboard cards. One "Videos" figure covering both
+        * would put a two-hour broadcast and a forty-second reel in the same
+        * number, and the roster is where somebody compares streamers to each
+        * other — the column that hides the difference is the one that misleads.
+        */
       (
         select count(*)::int from ${videos}
         where videos.streamer_id = streamers.id
+          and videos.media_kind = 'video'
           and ${inWindow(sql`videos.created_time`)}
       ) as video_count,
+      (
+        select count(*)::int from ${videos}
+        where videos.streamer_id = streamers.id
+          and videos.media_kind = 'livestream'
+          and ${inWindow(sql`videos.created_time`)}
+      ) as livestream_count,
       (
         select count(*)::int from ${commentSummaries}
         left join ${posts}  on posts.id  = comment_summaries.post_id
@@ -474,6 +491,7 @@ export async function listStreamerRoster(params: {
       : null,
     postCount: Number(row.post_count ?? 0),
     videoCount: Number(row.video_count ?? 0),
+    livestreamCount: Number(row.livestream_count ?? 0),
     summaryCount: Number(row.summary_count ?? 0),
     urgentCount: Number(row.urgent_count ?? 0),
     games: Array.isArray(row.games)

@@ -84,6 +84,14 @@ beforeEach(async () => {
   await assign(bladz, cabalId, true);
   await assign(vamp, cabalId, false);
   await assign(vamp, robloxId, true);
+
+  // One of each kind for Bladz, so the two content columns can be told apart.
+  await client.query(
+    `insert into videos (streamer_id, facebook_video_id, created_time, media_kind, raw_json)
+     values ($1, 'reel-1', now(), 'video', '{}'::jsonb),
+            ($1, 'live-1', now(), 'livestream', '{}'::jsonb)`,
+    [bladz],
+  );
 });
 
 describe("filtering the roster by game", () => {
@@ -115,6 +123,27 @@ describe("filtering the roster by game", () => {
     // No posts or videos are seeded at all. The roster is about who covers
     // what, not who was busy.
     expect(await codes(cabalId)).toContain("STM-001");
+  });
+});
+
+describe("the content columns", () => {
+  it("counts broadcasts apart from videos", async () => {
+    /*
+     * The roster is where streamers are compared to each other, so a column
+     * folding a two-hour broadcast into the same figure as a forty-second reel
+     * is the one that misleads. Split in the query, matching the dashboard.
+     */
+    const bladz = (await listStreamerRoster({})).find((row) => row.streamerCode === "STM-001");
+
+    expect(bladz?.videoCount).toBe(1);
+    expect(bladz?.livestreamCount).toBe(1);
+  });
+
+  it("reports zero for both rather than omitting a streamer with neither", async () => {
+    const orphan = (await listStreamerRoster({})).find((row) => row.streamerCode === "STM-003");
+
+    expect(orphan?.videoCount).toBe(0);
+    expect(orphan?.livestreamCount).toBe(0);
   });
 });
 

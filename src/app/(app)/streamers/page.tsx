@@ -76,7 +76,7 @@ async function RosterTable({
     gameId: query.gameId,
   });
 
-  const columnCount = showTokens ? 9 : 8;
+  const columnCount = showTokens ? 10 : 9;
 
   return (
     <Card>
@@ -107,6 +107,9 @@ async function RosterTable({
                 </TableHead>
                 <TableHead scope="col" className="text-right">
                   Videos
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Livestreams
                 </TableHead>
                 <TableHead scope="col" className="hidden text-right lg:table-cell">
                   Analyses
@@ -208,6 +211,26 @@ async function RosterTable({
                         className="underline-offset-4 hover:underline"
                       >
                         {row.videoCount}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </TableCell>
+
+                  {/*
+                   * Broadcasts, apart from the column beside it. Both link to
+                   * the same screen, which does not yet narrow to one kind —
+                   * the number is the claim here, and sending somebody to a
+                   * list that shows more than they clicked is a smaller lie
+                   * than folding two units into one figure.
+                   */}
+                  <TableCell className="text-right align-top font-mono text-xs">
+                    {row.livestreamCount > 0 ? (
+                      <Link
+                        href={`/videos?streamerId=${row.id}`}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {row.livestreamCount}
                       </Link>
                     ) : (
                       <span className="text-muted-foreground">0</span>
