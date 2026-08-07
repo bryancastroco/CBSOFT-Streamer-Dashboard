@@ -21,6 +21,7 @@ import { gameClause } from "@/lib/db/game-filter";
 import { commentSummaries, games, postInsights, posts, streamers } from "@/lib/db/schema";
 import type { PostSortKey, SortState } from "@/lib/filters/sorting";
 import type { NormalizedInsight, NormalizedPost } from "@/lib/meta/posts";
+import { excludeFeedStories } from "@/lib/db/content-kind";
 
 /**
  * Post and insight persistence.
@@ -301,7 +302,13 @@ export async function listPosts(
   filters: ListPostsFilters,
 ): Promise<{ items: PostTableItem[]; total: number }> {
   const db = getDb();
-  const conditions: SQL[] = [];
+
+  /*
+   * Never the feed story for a broadcast. That row exists to hold the
+   * livestream's comments; listing it here would show one stream twice — once
+   * under Posts and once under Livestreams — and inflate every post count.
+   */
+  const conditions: SQL[] = [excludeFeedStories(posts.videoId)];
 
   if (filters.streamerId) conditions.push(eq(posts.streamerId, filters.streamerId));
 

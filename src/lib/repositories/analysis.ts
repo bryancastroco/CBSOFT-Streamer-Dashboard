@@ -9,6 +9,8 @@ import { pageOffset, pageSize, tsParam } from "@/lib/db/params";
 import type { ContentType } from "@/lib/comments/content-ref";
 import type { ContentScope } from "@/lib/filters/period";
 import type { AnalysisSortKey, SortState } from "@/lib/filters/sorting";
+import { mediaKindClause } from "@/lib/db/content-kind";
+import { scopeIncludesPosts, scopeIncludesVideos } from "@/lib/filters/period";
 
 /**
  * The comment-analysis reading list.
@@ -105,13 +107,21 @@ const urgentCountExpression = sql`
  */
 function unifiedSource(filters: ListAnalysesFilters): SQL {
   const scope = filters.scope ?? "all";
-  const includePosts = scope === "all" || scope === "posts";
-  const includeVideos = scope === "all" || scope === "videos";
+  const includePosts = scopeIncludesPosts(scope);
+  const includeVideos = scopeIncludesVideos(scope);
+  const videoKind = mediaKindClause(sql`v.media_kind`, scope);
 
   const search = filters.search ? `%${filters.search}%` : null;
 
-  const postConditions: SQL[] = [sql`cs.post_id is not null`];
+  /*
+   * A broadcast's feed story is excluded from the post branch, and the video
+   * branch is narrowed to the kind in scope. Without the first, a livestream's
+   * analysis appears twice in this list — once as a post, once as a video —
+   * because both rows carry one.
+   */
+  const postConditions: SQL[] = [sql`cs.post_id is not null`, sql`p.video_id is null`];
   const videoConditions: SQL[] = [sql`cs.video_id is not null`];
+  if (videoKind) videoConditions.push(videoKind);
 
   if (filters.streamerId) {
     postConditions.push(sql`s.id = ${filters.streamerId}::uuid`);

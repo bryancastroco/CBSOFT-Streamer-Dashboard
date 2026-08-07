@@ -14,6 +14,8 @@ import { gameClause } from "@/lib/db/game-filter";
 import { resultRows, tsParam } from "@/lib/db/params";
 import type { ContentScope } from "@/lib/filters/period";
 import type { DashboardFilters } from "@/lib/repositories/dashboard";
+import { mediaKindClause } from "@/lib/db/content-kind";
+import { scopeIncludesPosts, scopeIncludesVideos } from "@/lib/filters/period";
 
 /**
  * One analysis across every comment the dashboard filters currently select.
@@ -129,12 +131,23 @@ function contentClauses(filters: DashboardFilters): SQL {
  * separate rows with no relationship, and each contributes independently.
  */
 function scopedContent(filters: DashboardFilters): SQL {
-  const posts = sql`select t.id, 'post' as kind, t.created_time from posts t where ${contentClauses(filters)}`;
-  const videos = sql`select t.id, 'video' as kind, t.created_time from videos t where ${contentClauses(filters)}`;
+  /*
+   * A feed story for a broadcast is excluded here as everywhere: its comments
+   * are the livestream's comments, reached through the video, and counting the
+   * row as a post as well would pool the same conversation twice.
+   */
+  const kind = mediaKindClause(sql`t.media_kind`, filters.scope);
 
-  if (filters.scope === "posts") return posts;
-  if (filters.scope === "videos") return videos;
-  return sql`${posts} union all ${videos}`;
+  const posts = sql`select t.id, 'post' as kind, t.created_time from posts t
+    where ${contentClauses(filters)} and t.video_id is null`;
+  const videos = sql`select t.id, 'video' as kind, t.created_time from videos t
+    where ${contentClauses(filters)} ${kind ? sql`and ${kind}` : sql``}`;
+
+  const wantsPosts = scopeIncludesPosts(filters.scope);
+  const wantsVideos = scopeIncludesVideos(filters.scope);
+
+  if (wantsPosts && wantsVideos) return sql`${posts} union all ${videos}`;
+  return wantsPosts ? posts : videos;
 }
 
 export async function getCommentOverview(

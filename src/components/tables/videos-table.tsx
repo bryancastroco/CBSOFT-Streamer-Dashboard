@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, Eye } from "lucide-react";
+import { ExternalLink, Eye, Radio } from "lucide-react";
 
 import { SentimentBadge, SummaryStatusBadge } from "@/components/data/analysis-badges";
 import {
@@ -13,6 +13,7 @@ import {
 import { GameBadge } from "@/components/data/game-badge";
 import { SortLink } from "@/components/data/sortable-header";
 import { EmptyState } from "@/components/layout/states";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import type { BrowseQuery } from "@/lib/filters/browse";
@@ -115,6 +116,17 @@ export function VideosTable({
             <p className="text-xs whitespace-nowrap text-muted-foreground">
               {formatDateTime(video.createdTime)}
             </p>
+            {/*
+             * Which kind this is. Both arrive from the same Meta edge with the
+             * same shape, so without saying so a two-hour broadcast and a
+             * forty-second reel look identical in this list.
+             */}
+            {video.mediaKind === "livestream" ? (
+              <Badge variant="outline" className="gap-1 text-xs font-normal">
+                <Radio className="size-3" aria-hidden />
+                Livestream
+              </Badge>
+            ) : null}
             <GameBadge name={video.gameName} source={video.gameSource} show={showGames} />
           </div>
         </div>

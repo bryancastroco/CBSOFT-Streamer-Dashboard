@@ -18,10 +18,14 @@ import {
 
 import { getDb } from "@/lib/db";
 import { gameClause } from "@/lib/db/game-filter";
-import { commentSummaries, games, streamers, videoInsights, videos } from "@/lib/db/schema";
+import { resultRows } from "@/lib/db/params";
+import { commentSummaries, games, posts, streamers, videoInsights, videos } from "@/lib/db/schema";
 import type { SortState, VideoSortKey } from "@/lib/filters/sorting";
 import type { NormalizedInsight } from "@/lib/meta/posts";
+import { classifyVideo } from "@/lib/meta/media-kind";
 import type { NormalizedVideo } from "@/lib/meta/videos";
+import { mediaKindClause } from "@/lib/db/content-kind";
+import type { ContentScope } from "@/lib/filters/period";
 
 /**
  * Video and video-insight persistence.
@@ -43,6 +47,8 @@ export type VideoListItem = {
   lengthSeconds: number | null;
   createdTime: Date;
   permalinkUrl: string | null;
+  /** `video` or `livestream`. See `lib/meta/media-kind`. */
+  mediaKind: string;
   lastSyncedAt: Date;
 };
 
@@ -57,6 +63,9 @@ const LIST_COLUMNS = {
   lengthSeconds: videos.lengthSeconds,
   createdTime: videos.createdTime,
   permalinkUrl: videos.permalinkUrl,
+  // So a row can say which it is. A two-hour broadcast and a forty-second reel
+  // were previously indistinguishable in this list.
+  mediaKind: videos.mediaKind,
   lastSyncedAt: videos.lastSyncedAt,
 } as const;
 
@@ -111,17 +120,50 @@ export async function upsertVideos(params: {
   const db = getDb();
   const now = new Date();
 
-  const values = params.videos.map((video) => ({
-    streamerId: params.streamerId,
-    facebookVideoId: video.facebookVideoId,
-    title: video.title,
-    description: video.description,
-    lengthSeconds: video.lengthSeconds,
-    createdTime: video.createdTime,
-    permalinkUrl: video.permalinkUrl,
-    rawJson: video.raw,
-    lastSyncedAt: now,
-  }));
+  /*
+   * Which of these already have a feed story.
+   *
+   * Needed before the insert because `classifyVideo` takes it as a signal, and
+   * the alternative — classifying in SQL afterwards — would put the rule in two
+   * places that could disagree. One round trip per batch is not worth that.
+   *
+   * A post id is `{page-id}_{object-id}`, and for a video story the object id
+   * is the video id.
+   */
+  const facebookIds = params.videos.map((video) => video.facebookVideoId);
+
+  const twins = await db.execute<{ video_id: string }>(
+    sql`select distinct split_part(${posts.facebookPostId}, '_', 2) as video_id
+        from ${posts}
+        where ${posts.streamerId} = ${params.streamerId}
+          and split_part(${posts.facebookPostId}, '_', 2) = any(${facebookIds}::text[])`,
+  );
+
+  const hasFeedPost = new Set(resultRows<{ video_id: string }>(twins).map((row) => row.video_id));
+
+  const values = params.videos.map((video) => {
+    const classified = classifyVideo({
+      liveStatus: video.liveStatus,
+      permalinkUrl: video.permalinkUrl,
+      lengthSeconds: video.lengthSeconds,
+      hasFeedPost: hasFeedPost.has(video.facebookVideoId),
+    });
+
+    return {
+      streamerId: params.streamerId,
+      facebookVideoId: video.facebookVideoId,
+      title: video.title,
+      description: video.description,
+      lengthSeconds: video.lengthSeconds,
+      createdTime: video.createdTime,
+      permalinkUrl: video.permalinkUrl,
+      liveStatus: video.liveStatus,
+      mediaKind: classified.kind,
+      mediaKindSource: classified.source,
+      rawJson: video.raw,
+      lastSyncedAt: now,
+    };
+  });
 
   const written = await db
     .insert(videos)
@@ -133,13 +175,48 @@ export async function upsertVideos(params: {
         description: sql`excluded.description`,
         lengthSeconds: sql`excluded.length_seconds`,
         permalinkUrl: sql`excluded.permalink_url`,
+        liveStatus: sql`excluded.live_status`,
+        mediaKind: sql`excluded.media_kind`,
+        mediaKindSource: sql`excluded.media_kind_source`,
         rawJson: sql`excluded.raw_json`,
         lastSyncedAt: sql`excluded.last_synced_at`,
       },
     })
     .returning({ id: videos.id });
 
+  /*
+   * Tie each feed story to the video it describes.
+   *
+   * Done from this side as well as the posts side because the two edges are
+   * synced separately and either can arrive first. A broadcast whose story was
+   * stored before its video would otherwise stay unlinked until something
+   * happened to touch it again — and unlinked means counted twice.
+   */
+  await linkFeedPostsToVideos(params.streamerId);
+
   return { written: written.length };
+}
+
+/**
+ * Point `posts.video_id` at the video each feed story describes.
+ *
+ * Idempotent and cheap: it only ever fills in nulls, and the join is on an
+ * indexed column either side.
+ */
+export async function linkFeedPostsToVideos(streamerId: string): Promise<number> {
+  const db = getDb();
+
+  const linked = await db.execute<{ id: string }>(
+    sql`update ${posts} p
+        set video_id = v.id
+        from ${videos} v
+        where v.facebook_video_id = split_part(p.facebook_post_id, '_', 2)
+          and p.streamer_id = ${streamerId}
+          and p.video_id is null
+        returning p.id`,
+  );
+
+  return resultRows<{ id: string }>(linked).length;
 }
 
 /** Resolve internal ids for a set of Meta video ids. */
@@ -221,6 +298,13 @@ export type ListVideosFilters = {
   search?: string | undefined;
   from?: Date | null;
   to?: Date | null;
+  /**
+   * Which kinds this list covers. Omitted means every kind.
+   *
+   * The Videos screen passes `videos` and the Livestreams screen passes
+   * `livestreams`; both read the same table and differ only here.
+   */
+  scope?: ContentScope | undefined;
   sort?: SortState<VideoSortKey>;
   limit: number;
   offset: number;
@@ -247,6 +331,9 @@ export async function listVideos(
   const conditions: SQL[] = [];
 
   if (filters.streamerId) conditions.push(eq(videos.streamerId, filters.streamerId));
+
+  const kind = mediaKindClause(videos.mediaKind, filters.scope ?? "all");
+  if (kind) conditions.push(kind);
 
   const game = gameClause(videos.gameId, filters.gameId);
   if (game) conditions.push(game);

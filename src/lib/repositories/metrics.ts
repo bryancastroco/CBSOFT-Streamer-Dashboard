@@ -8,6 +8,7 @@ import { gameClause } from "@/lib/db/game-filter";
 import { tsParam, tsResult } from "@/lib/db/params";
 import { commentSummaries, comments, posts, streamers, videos } from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
+import { scopeIncludesPosts, scopeIncludesVideos } from "@/lib/filters/period";
 
 /**
  * Dashboard aggregates.
@@ -178,8 +179,8 @@ async function countSummaries(
   filters: MetricsFilters & { scope: ContentScope },
 ): Promise<{ generated: number; urgent: number }> {
   const db = getDb();
-  const includePosts = filters.scope === "all" || filters.scope === "posts";
-  const includeVideos = filters.scope === "all" || filters.scope === "videos";
+  const includePosts = scopeIncludesPosts(filters.scope);
+  const includeVideos = scopeIncludesVideos(filters.scope);
 
   const columns = {
     generated: sql<number>`count(*) filter (where ${commentSummaries.status} = 'completed')::int`,

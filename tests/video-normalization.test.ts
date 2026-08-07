@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { CONTENT_TYPES, contentHref, isContentType } from "@/lib/comments/content-ref";
@@ -12,15 +15,42 @@ const BASE = {
 };
 
 describe("video field selection", () => {
-  it("requests exactly the six specified fields", () => {
-    expect(VIDEO_FIELDS).toBe("id,title,description,created_time,permalink_url,length");
+  it("requests exactly the specified fields", () => {
+    expect(VIDEO_FIELDS).toBe(
+      "id,title,description,created_time,permalink_url,length,live_status",
+    );
   });
 
-  it("reads the general videos edge, not live_videos", () => {
-    // /live_videos can require separate Meta App Review; ended broadcasts show
-    // up on /videos as VODs, so the general edge keeps the integration inside
-    // the permissions the Page token already carries.
-    expect(VIDEO_FIELDS).not.toContain("live");
+  it("asks whether a video was broadcast live", () => {
+    /*
+     * Without it a two-hour stream and a five-second clip are the same object.
+     * `live_status` is a field on the Video node and needs no permission the
+     * Page token does not already carry — see `lib/meta/media-kind`.
+     */
+    expect(VIDEO_FIELDS).toContain("live_status");
+  });
+
+  it("reads the general videos edge, not live_videos", async () => {
+    /*
+     * /live_videos can require separate Meta App Review; ended broadcasts show
+     * up on /videos as VODs, so the general edge keeps the integration inside
+     * the permissions the Page token already carries.
+     *
+     * Asserted against the module rather than `VIDEO_FIELDS`, which is where it
+     * used to look — a field list is not an edge, and the day a field was added
+     * with "live" in its name the test failed for a reason that had nothing to
+     * do with what it was protecting.
+     */
+    const source = await readFile(
+      path.join(process.cwd(), "src", "lib", "meta", "videos.ts"),
+      "utf8",
+    );
+
+    // Comments stripped: the module's own header explains why `/live_videos`
+    // is avoided, and matching the explanation would fail on the reasoning.
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+    expect(code).not.toContain("live_videos");
   });
 });
 

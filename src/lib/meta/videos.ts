@@ -32,6 +32,15 @@ export const VIDEO_FIELDS = [
   "created_time",
   "permalink_url",
   "length",
+  /*
+   * Whether this was a live broadcast.
+   *
+   * Added in Phase 29. Without it a two-hour stream and a five-second clip are
+   * the same object, and every screen said "video" for both. It needs no
+   * permission the Page token does not already carry — see `lib/meta/media-kind`
+   * for what the values mean and what happens to rows synced before this.
+   */
+  "live_status",
 ].join(",");
 
 /** Videos requested per page. */
@@ -45,6 +54,8 @@ export type RawVideo = {
   permalink_url?: string;
   /** Fractional seconds. Absent for some video types. */
   length?: number;
+  /** `LIVE`, `LIVE_STOPPED`, `VOD` — or absent on an ordinary upload. */
+  live_status?: string;
 };
 
 export type FetchVideosResult = {
@@ -124,6 +135,8 @@ export type NormalizedVideo = {
   lengthSeconds: number | null;
   createdTime: Date;
   permalinkUrl: string | null;
+  /** Meta's `live_status`, verbatim. Null when the field was not returned. */
+  liveStatus: string | null;
   raw: RawVideo;
 };
 
@@ -156,6 +169,9 @@ export function normalizeVideo(raw: RawVideo): NormalizedVideo | null {
     lengthSeconds: length,
     createdTime,
     permalinkUrl: absolutePermalink(raw.permalink_url),
+    // Carried through unparsed. `classifyVideo` owns what the values mean.
+    liveStatus:
+      typeof raw.live_status === "string" && raw.live_status.length > 0 ? raw.live_status : null,
     raw,
   };
 }

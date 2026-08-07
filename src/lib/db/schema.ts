@@ -533,6 +533,20 @@ export const posts = pgTable(
      * `on delete set null`: removing a game must not remove the posts that
      * mentioned it. The content is the record; the game is a label on it.
      */
+    /**
+     * Set when this post is the Page-feed story for a video.
+     *
+     * Facebook publishes a feed story alongside a live broadcast, so the
+     * `/posts` and `/videos` edges each return the same broadcast and both were
+     * stored — 33 of 286 posts were a second copy of a video, inflating every
+     * content count and splitting one broadcast across two rows, with the
+     * comments on one and the watch time on the other.
+     *
+     * The link is what makes them one thing again: a post carrying it is not a
+     * post in its own right, it is where that video's comments live.
+     */
+    videoId: uuid("video_id").references((): AnyPgColumn => videos.id, { onDelete: "set null" }),
+
     gameId: uuid("game_id").references((): AnyPgColumn => games.id, { onDelete: "set null" }),
     /**
      * How `gameId` was decided — `hashtag` or `streamer`.
@@ -555,6 +569,8 @@ export const posts = pgTable(
     index("posts_streamer_id_created_time_idx").on(table.streamerId, table.createdTime.desc()),
     index("posts_created_time_idx").on(table.createdTime.desc()),
     index("posts_last_synced_at_idx").on(table.lastSyncedAt.desc()),
+    // Every post listing now filters on this, so it earns an index.
+    index("posts_video_id_idx").on(table.videoId),
 
     check(
       "posts_counts_non_negative_check",
@@ -669,6 +685,28 @@ export const videos = pgTable(
     /** When the comments edge was last walked. Null means never. See `posts`. */
     commentsSyncedAt: timestamp("comments_synced_at", { withTimezone: true }),
 
+    /**
+     * Meta's `live_status`, verbatim and unparsed.
+     *
+     * Stored raw rather than only as a boolean because the field was added
+     * after 140 videos had already been synced, and the exact values Meta
+     * returns for an ordinary upload are worth being able to inspect rather
+     * than having to guess at a second time.
+     */
+    liveStatus: text("live_status"),
+
+    /** `video` or `livestream`. See `lib/meta/media-kind`. */
+    mediaKind: text("media_kind").notNull().default("video"),
+
+    /**
+     * Which rule decided `media_kind` — `live_status` or `inferred`.
+     *
+     * The same distinction `game_source` draws. A row classified from Meta's
+     * own field and one classified from length and a feed story are different
+     * claims, and only one of them should be trusted at the boundaries.
+     */
+    mediaKindSource: text("media_kind_source"),
+
     /** Resolved game attribution. See `posts.gameId`. */
     gameId: uuid("game_id").references((): AnyPgColumn => games.id, { onDelete: "set null" }),
     gameSource: text("game_source"),
@@ -681,6 +719,8 @@ export const videos = pgTable(
     // The external identifier is the upsert target, so a re-sync updates rather
     // than duplicates.
     uniqueIndex("videos_facebook_video_id_key").on(table.facebookVideoId),
+
+    index("videos_media_kind_created_time_idx").on(table.mediaKind, table.createdTime.desc()),
 
     index("videos_streamer_id_created_time_idx").on(table.streamerId, table.createdTime.desc()),
     index("videos_created_time_idx").on(table.createdTime.desc()),

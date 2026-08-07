@@ -224,8 +224,19 @@ export function resolvePeriod(input: PeriodInput = {}): ResolvedPeriod {
  * Which content a screen is scoped to. `all` is not the same as the
  * `ContentType` union in `lib/comments/content-ref`, which names a single
  * stored row — this is a filter value.
+ *
+ * ## Why livestreams are their own scope
+ *
+ * A recorded broadcast and a thirty-second reel arrive from the same Meta edge
+ * with the same shape, and the product treats them as the same thing: "video".
+ * They are not comparable. One runs two hours and carries hundreds of comments;
+ * the other runs forty seconds. Averaging them produces a number describing
+ * neither, and a filter that cannot separate them cannot answer the question
+ * anybody actually has about either.
+ *
+ * The split is on `videos.media_kind` — see `lib/meta/media-kind`.
  */
-export const CONTENT_SCOPES = ["all", "posts", "videos"] as const;
+export const CONTENT_SCOPES = ["all", "posts", "videos", "livestreams"] as const;
 
 export type ContentScope = (typeof CONTENT_SCOPES)[number];
 
@@ -234,10 +245,39 @@ export function isContentScope(value: unknown): value is ContentScope {
 }
 
 export const CONTENT_SCOPE_LABELS: Record<ContentScope, string> = {
-  all: "Posts and videos",
+  all: "All content",
   posts: "Posts",
   videos: "Videos",
+  livestreams: "Livestreams",
 };
+
+/**
+ * How a scope maps onto the two tables — the single place that decides.
+ *
+ * Every query used to spell this out as `scope === "all" || scope === "posts"`,
+ * in six files. Adding a fourth value to that arrangement means finding all six
+ * and getting each right, and the ones missed fail by quietly returning the
+ * wrong rows rather than by breaking.
+ */
+export function scopeIncludesPosts(scope: ContentScope): boolean {
+  return scope === "all" || scope === "posts";
+}
+
+export function scopeIncludesVideos(scope: ContentScope): boolean {
+  return scope === "all" || scope === "videos" || scope === "livestreams";
+}
+
+/**
+ * Which `media_kind` a scope restricts videos to, or null for no restriction.
+ *
+ * `all` deliberately returns null rather than listing both kinds: "everything"
+ * should not have to be updated when a third kind appears.
+ */
+export function scopeVideoKind(scope: ContentScope): "video" | "livestream" | null {
+  if (scope === "videos") return "video";
+  if (scope === "livestreams") return "livestream";
+  return null;
+}
 
 export function resolveContentScope(value: unknown): ContentScope {
   return isContentScope(value) ? value : "all";

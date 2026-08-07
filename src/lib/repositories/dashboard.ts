@@ -4,11 +4,16 @@ import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
+import { excludeFeedStories, mediaKindClause } from "@/lib/db/content-kind";
 import { displayDayText, displayDay } from "@/lib/db/display-day";
 import { gameClause } from "@/lib/db/game-filter";
 import { tsParam } from "@/lib/db/params";
 import { commentSummaries, posts, streamers, videos } from "@/lib/db/schema";
-import type { ContentScope } from "@/lib/filters/period";
+import {
+  scopeIncludesPosts,
+  scopeIncludesVideos,
+  type ContentScope,
+} from "@/lib/filters/period";
 import type { SentimentSlice, TimeSeriesPoint, TopStreamer } from "@/lib/ui/dashboard-shapes";
 import { getDashboardMetrics, type DashboardMetrics, type MetricsFilters } from "./metrics";
 
@@ -82,11 +87,19 @@ function contentScope(
   table: typeof posts | typeof videos,
   filters: DashboardFilters,
 ): (SQL | undefined)[] {
-  return [
+  const shared = [
     streamerFilter(table.streamerId, filters.streamerId),
     gameClause(table.gameId, filters.gameId),
     ...within(table.createdTime, filters.period),
   ];
+
+  /*
+   * The kind predicate belongs here rather than at each call site, for the same
+   * reason the three above do: a query that forgets it returns plausible rows.
+   */
+  return table === posts
+    ? [...shared, excludeFeedStories(posts.videoId)]
+    : [...shared, mediaKindClause(videos.mediaKind, filters.scope)];
 }
 
 /**
@@ -157,8 +170,8 @@ export async function getMetricsComparison(filters: DashboardFilters): Promise<M
 export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeriesPoint[]> {
   const db = getDb();
   const scope = filters.scope;
-  const includePosts = scope === "all" || scope === "posts";
-  const includeVideos = scope === "all" || scope === "videos";
+  const includePosts = scopeIncludesPosts(scope);
+  const includeVideos = scopeIncludesVideos(scope);
 
   const postRows = includePosts
     ? await db
@@ -284,10 +297,12 @@ function summaryScopeClauses(filters: DashboardFilters): SQL[] {
 
   const postGame = gameClause(sql`p.game_id`, filters.gameId);
   const videoGame = gameClause(sql`v.game_id`, filters.gameId);
+  const videoKind = mediaKindClause(sql`v.media_kind`, scope);
 
   const postMatch = sql`exists (
     select 1 from ${posts} p
      where p.id = ${commentSummaries.postId}
+       and p.video_id is null
        ${streamerId ? sql`and p.streamer_id = ${streamerId}` : sql``}
        ${postGame ? sql`and ${postGame}` : sql``}
        ${period.from ? sql`and p.created_time >= ${tsParam(period.from)}::timestamptz` : sql``}
@@ -297,15 +312,19 @@ function summaryScopeClauses(filters: DashboardFilters): SQL[] {
   const videoMatch = sql`exists (
     select 1 from ${videos} v
      where v.id = ${commentSummaries.videoId}
+       ${videoKind ? sql`and ${videoKind}` : sql``}
        ${streamerId ? sql`and v.streamer_id = ${streamerId}` : sql``}
        ${videoGame ? sql`and ${videoGame}` : sql``}
        ${period.from ? sql`and v.created_time >= ${tsParam(period.from)}::timestamptz` : sql``}
        ${period.to ? sql`and v.created_time <= ${tsParam(period.to)}::timestamptz` : sql``}
   )`;
 
-  if (scope === "posts") clauses.push(postMatch);
-  else if (scope === "videos") clauses.push(videoMatch);
-  else clauses.push(sql`(${postMatch} or ${videoMatch})`);
+  const wantsPosts = scopeIncludesPosts(scope);
+  const wantsVideos = scopeIncludesVideos(scope);
+
+  if (wantsPosts && wantsVideos) clauses.push(sql`(${postMatch} or ${videoMatch})`);
+  else if (wantsPosts) clauses.push(postMatch);
+  else clauses.push(videoMatch);
 
   return clauses;
 }
@@ -364,7 +383,7 @@ export async function listRecentContent(
   const scope = filters.scope;
 
   const postRows =
-    scope === "videos"
+    !scopeIncludesPosts(scope)
       ? []
       : await db
           .select({
@@ -388,7 +407,7 @@ export async function listRecentContent(
           .limit(limit);
 
   const videoRows =
-    scope === "posts"
+    !scopeIncludesVideos(scope)
       ? []
       : await db
           .select({
