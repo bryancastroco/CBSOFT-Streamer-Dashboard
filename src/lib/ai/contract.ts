@@ -95,8 +95,16 @@ export const COMMENT_ANALYSIS_JSON_SCHEMA = {
     urgent_issues: {
       type: "array",
       items: { type: "string" },
+      /*
+       * Narrowed after a real over-flag. A commenter mentioned that *another*
+       * streamer's microphone was broken during their live, and it was raised
+       * as urgent — accurately read, but nothing CBSOFT can act on and nothing
+       * about the Page being analysed. A flag that fires on any unfortunate
+       * event mentioned anywhere in the comments is one people stop reading,
+       * which costs the real ones their whole value.
+       */
       description:
-        "Anything needing prompt attention, such as a reported outage or a safety concern.",
+        "Only what needs CBSOFT to act, about this Page or this streamer: a payment or account problem, an accusation of fraud, a safety concern, a legal threat, or an outage affecting this Page. Not general negative feedback, and not a problem someone else is having — if it does not name something CBSOFT can act on here, leave it out.",
     },
   },
   required: [

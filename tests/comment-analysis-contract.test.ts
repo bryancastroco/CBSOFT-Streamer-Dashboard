@@ -269,3 +269,46 @@ describe("duplicate comments", () => {
     expect(dedupeComments([make("a"), make("b"), make("c")])).toHaveLength(3);
   });
 });
+
+/**
+ * What counts as urgent.
+ *
+ * A commenter mentioned that *another* streamer's microphone was broken during
+ * their live, and it was raised under "Flagged as urgent". The model read the
+ * comment correctly; the instruction was the problem, being broad enough to
+ * cover any unfortunate event mentioned anywhere in the text.
+ *
+ * That is expensive in a specific way. The urgent list is the one thing on the
+ * panel that claims somebody should act now, and a flag that fires on things
+ * nobody can act on is one people learn to scroll past — taking the real ones
+ * with it.
+ */
+describe("the urgent list is scoped to things CBSOFT can act on", () => {
+  const description = () => {
+    const schema = COMMENT_ANALYSIS_JSON_SCHEMA.properties.urgent_issues;
+    return "description" in schema ? String(schema.description).toLowerCase() : "";
+  };
+
+  it("says it is about this Page rather than anything unfortunate", () => {
+    expect(description()).toMatch(/this page|this streamer/);
+  });
+
+  it("names the categories that qualify", () => {
+    const text = description();
+
+    // Money, accusations, safety and law — the four that need a person today.
+    expect(text).toMatch(/payment|account/);
+    expect(text).toMatch(/fraud/);
+    expect(text).toMatch(/safety/);
+    expect(text).toMatch(/legal/);
+  });
+
+  it("excludes ordinary complaints and other people's problems", () => {
+    const text = description();
+
+    // Both exclusions matter, and the second is the one that was missing:
+    // "someone else is having a problem" is not this Page's urgent issue.
+    expect(text).toMatch(/not general negative feedback/);
+    expect(text).toMatch(/someone else/);
+  });
+});

@@ -12,6 +12,7 @@ import { getDb } from "@/lib/db";
 import { commentOverviewSummaries, commentSummaries, comments } from "@/lib/db/schema";
 import { gameClause } from "@/lib/db/game-filter";
 import { resultRows, tsParam } from "@/lib/db/params";
+import type { ContentScope } from "@/lib/filters/period";
 import type { DashboardFilters } from "@/lib/repositories/dashboard";
 
 /**
@@ -89,6 +90,15 @@ export type CommentOverview = {
   contentSampled: number;
   /** Content items matching the filters, before the cap. */
   contentInScope: number;
+  /**
+   * Which content the reading covers.
+   *
+   * Carried so the caption can name it. It said "posts and videos" whatever the
+   * Content filter was set to, which is a claim about coverage the reading did
+   * not make — and the one thing somebody checks when a finding looks like it
+   * came from the wrong place.
+   */
+  scope: ContentScope;
   /** True when the reading covers less than the full selection. */
   truncated: boolean;
   /** Per-item sentiment for the sampled content, from stored summaries. */
@@ -140,6 +150,7 @@ export async function getCommentOverview(
     analysed: 0,
     contentSampled: 0,
     contentInScope: 0,
+    scope: filters.scope,
     truncated: false,
     sentiment: { positive: 0, neutral: 0, negative: 0, mixed: 0 },
     analysis: analyseOffline([]),
@@ -232,6 +243,7 @@ export async function getCommentOverview(
     analysed: messages.length,
     contentSampled: rows.length,
     contentInScope,
+    scope: filters.scope,
     truncated: rows.length < contentInScope || messages.length >= commentCap,
     sentiment,
   };

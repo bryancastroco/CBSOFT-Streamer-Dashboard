@@ -26,6 +26,22 @@ const SENTIMENT_ORDER = ["positive", "mixed", "neutral", "negative"] as const;
 const numberFormat = new Intl.NumberFormat("en-GB");
 
 /** Entries that are the analyser's "nothing here" marker rather than findings. */
+/**
+ * What the reading actually covered, named.
+ *
+ * This caption said "posts and videos" regardless of the Content filter. With
+ * Content set to Posts it was claiming coverage the reading did not have — and
+ * a caption's whole job here is to let somebody check where a finding could
+ * have come from, which is exactly the question asked when one looks wrong.
+ */
+function scopeNoun(overview: CommentOverview): string {
+  const plural = overview.contentInScope === 1 ? "" : "s";
+
+  if (overview.scope === "posts") return `post${plural}`;
+  if (overview.scope === "videos") return `video${plural}`;
+  return `post${plural} and video${plural}`;
+}
+
 function realFindings(items: readonly string[]): string[] {
   return items.filter((item) => item !== NO_SIGNIFICANT_FINDINGS && item.trim().length > 0);
 }
@@ -91,13 +107,11 @@ export function CommentOverviewPanel({ overview }: { overview: CommentOverview }
               {overview.truncated ? (
                 <>
                   the {numberFormat.format(overview.contentSampled)} most recent of{" "}
-                  {numberFormat.format(overview.contentInScope)} posts and videos
+                  {numberFormat.format(overview.contentInScope)} {scopeNoun(overview)}
                 </>
               ) : (
                 <>
-                  {numberFormat.format(overview.contentInScope)} post
-                  {overview.contentInScope === 1 ? "" : "s"} and video
-                  {overview.contentInScope === 1 ? "" : "s"}
+                  {numberFormat.format(overview.contentInScope)} {scopeNoun(overview)}
                 </>
               )}
               .
