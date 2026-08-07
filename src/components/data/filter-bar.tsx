@@ -88,6 +88,15 @@ export type FilterBarOptions = {
    * there describes nothing on the page.
    */
   gameLabels?: { all?: string; any?: string; none?: string };
+  /**
+   * Whether to offer "all games" as a set distinct from "everything".
+   *
+   * True on content screens, where the two genuinely differ: everything
+   * includes content the catalogue does not reach. False on the roster, where
+   * the neutral option is already every streamer and a second entry meaning
+   * "the ones with a game" is a distinction without a use.
+   */
+  showAnyGame?: boolean;
   /** Hide the posts/videos switch on screens that are already one or the other. */
   showScope?: boolean;
   /** Hide the search box on screens with nothing to search. */
@@ -171,6 +180,7 @@ export function FilterBar<K extends string>({
 
   // Content wording by default, because every screen but the roster lists
   // content.
+  const showAnyGame = options.showAnyGame ?? true;
   const gameAllLabel = options.gameLabels?.all ?? "All content";
   const gameAnyLabel = options.gameLabels?.any ?? "All games";
   const gameNoneLabel = options.gameLabels?.none ?? "Not registered games";
@@ -279,7 +289,10 @@ export function FilterBar<K extends string>({
                */}
               {showAllContent ? <option value={ALL_CONTENT}>{gameAllLabel}</option> : null}
 
-              <option value={ANY_GAME}>{gameAnyLabel}</option>
+              {/* Kept when selected even if suppressed — see the note below. */}
+              {showAnyGame || query.gameId === ANY_GAME ? (
+                <option value={ANY_GAME}>{gameAnyLabel}</option>
+              ) : null}
               {games.map((game) => (
                 <option key={game.id} value={game.id}>
                   {game.name}

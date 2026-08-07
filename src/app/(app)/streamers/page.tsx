@@ -307,10 +307,21 @@ export default async function StreamersPage({
            * that opens hiding four of seven streamers is not a roster.
            */
           showAllContent: true,
-          showUnregistered: gameFilter.showUnregistered,
+          /*
+           * Both always offered here, whatever the admin set for content
+           * screens. On the roster they are not extra views — they are the
+           * default and the one question this page exists to answer, which is
+           * whose games nobody has set up yet.
+           */
+          showUnregistered: true,
+          /*
+           * No "assigned to a game" entry. The neutral option is already every
+           * streamer, so a set meaning "the ones with a game" sits between two
+           * clearer answers without being either.
+           */
+          showAnyGame: false,
           gameLabels: {
-            all: "All streamers",
-            any: "Assigned to a game",
+            all: "All games",
             none: "No game assigned",
           },
           showScope: false,
