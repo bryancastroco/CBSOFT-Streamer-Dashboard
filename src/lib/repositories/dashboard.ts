@@ -4,11 +4,11 @@ import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { NO_SIGNIFICANT_FINDINGS } from "@/lib/ai/contract";
 import { getDb } from "@/lib/db";
+import { displayDayText, displayDay } from "@/lib/db/display-day";
 import { gameClause } from "@/lib/db/game-filter";
 import { tsParam } from "@/lib/db/params";
 import { commentSummaries, posts, streamers, videos } from "@/lib/db/schema";
 import type { ContentScope } from "@/lib/filters/period";
-import { DISPLAY_TIME_ZONE } from "@/lib/time/zone";
 import type { SentimentSlice, TimeSeriesPoint, TopStreamer } from "@/lib/ui/dashboard-shapes";
 import { getDashboardMetrics, type DashboardMetrics, type MetricsFilters } from "./metrics";
 
@@ -163,7 +163,7 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
   const postRows = includePosts
     ? await db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${posts.createdTime} at time zone ${DISPLAY_TIME_ZONE}), 'YYYY-MM-DD')`,
+          day: displayDayText(posts.createdTime),
           reactions: sql<number>`coalesce(sum(${posts.reactionCount}), 0)::int`,
           comments: sql<number>`coalesce(sum(${posts.commentCount}), 0)::int`,
           shares: sql<number>`coalesce(sum(${posts.shareCount}), 0)::int`,
@@ -171,18 +171,18 @@ export async function getTimeSeries(filters: DashboardFilters): Promise<TimeSeri
         })
         .from(posts)
         .where(and(...contentScope(posts, filters)))
-        .groupBy(sql`date_trunc('day', ${posts.createdTime} at time zone ${DISPLAY_TIME_ZONE})`)
+        .groupBy(displayDay(posts.createdTime))
     : [];
 
   const videoRows = includeVideos
     ? await db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${videos.createdTime} at time zone ${DISPLAY_TIME_ZONE}), 'YYYY-MM-DD')`,
+          day: displayDayText(videos.createdTime),
           count: sql<number>`count(*)::int`,
         })
         .from(videos)
         .where(and(...contentScope(videos, filters)))
-        .groupBy(sql`date_trunc('day', ${videos.createdTime} at time zone ${DISPLAY_TIME_ZONE})`)
+        .groupBy(displayDay(videos.createdTime))
     : [];
 
   const byDay = new Map<string, TimeSeriesPoint>();
