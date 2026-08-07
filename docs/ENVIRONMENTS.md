@@ -212,8 +212,18 @@ agree with it.
 
 ## 6. The Vercel cron schedule is constrained by the plan
 
-`vercel.json` schedules `/api/cron/daily-sync` at `0 3 * * *` — **once a day**, not
+`vercel.json` schedules `/api/cron/daily-sync` at `0 18 * * *` — **once a day**, not
 every six hours.
+
+The hour is UTC, and Vercel offers no timezone field, so the expression carries
+the conversion: 18:00 UTC is 02:00 the following morning in `DISPLAY_TIME_ZONE`
+(`Asia/Manila`). That is the point — the sweep takes minutes, hits Meta hard,
+and should not be competing with the working day it exists to report on. It
+also means the date in the cron expression and the date in the sync log differ
+by one, which is expected rather than a fault.
+
+Changing the display zone does **not** move this. If the two ever need to agree
+again, the expression is the thing to edit.
 
 Not a preference. On the Hobby plan Vercel rejects any cron that would fire more
 than daily, and it rejects it at *deployment creation*:
