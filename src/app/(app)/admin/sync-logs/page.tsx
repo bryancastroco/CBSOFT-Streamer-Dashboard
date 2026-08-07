@@ -158,8 +158,8 @@ function SyncLogTableRow({ run }: { run: SyncLogRow }) {
         ) : (
           <span className="text-muted-foreground">
             Whole roster
-            {run.childCount > 0
-              ? ` · ${run.childCount} streamer${run.childCount === 1 ? "" : "s"}`
+            {run.streamerCount > 0
+              ? ` · ${run.streamerCount} streamer${run.streamerCount === 1 ? "" : "s"}`
               : ""}
           </span>
         )}

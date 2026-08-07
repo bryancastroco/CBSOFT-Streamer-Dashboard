@@ -34,18 +34,30 @@ export type SyncLogRow = {
   videosProcessed: number;
   commentsProcessed: number;
   summariesGenerated: number;
-  /** How many per-streamer runs this one spawned. Zero for a single-streamer run. */
-  childCount: number;
+  /**
+   * How many distinct streamers this run covered. Zero for a single-streamer
+   * run. Named for what it counts, because the previous name — a child-row
+   * count — was rendered as a streamer count and nothing objected.
+   */
+  streamerCount: number;
 };
 
 export async function listSyncLogs(limit = 50): Promise<SyncLogRow[]> {
   const db = getDb();
 
+  /*
+   * Distinct streamers, not child rows.
+   *
+   * A sweep opens a child run per streamer *per phase* — posts, then videos —
+   * so `count(*)` is twice the roster and the screen read "8 streamers" on a
+   * roster of four. It scales with the phase count too, so adding a third phase
+   * would have made it read triple without anything else changing.
+   */
   const children = db.$with("children").as(
     db
       .select({
         parentId: syncRuns.parentSyncRunId,
-        total: sql<number>`count(*)::int`.as("total"),
+        total: sql<number>`count(distinct ${syncRuns.streamerId})::int`.as("total"),
       })
       .from(syncRuns)
       .groupBy(syncRuns.parentSyncRunId),
@@ -66,7 +78,7 @@ export async function listSyncLogs(limit = 50): Promise<SyncLogRow[]> {
       videosProcessed: syncRuns.videosProcessed,
       commentsProcessed: syncRuns.commentsProcessed,
       summariesGenerated: syncRuns.summariesGenerated,
-      childCount: sql<number>`coalesce(${children.total}, 0)::int`,
+      streamerCount: sql<number>`coalesce(${children.total}, 0)::int`,
     })
     .from(syncRuns)
     .leftJoin(streamers, eq(streamers.id, syncRuns.streamerId))
