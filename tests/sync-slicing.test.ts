@@ -209,3 +209,129 @@ describe("slice arithmetic", () => {
     expect(invocations).toBe(5);
   });
 });
+
+/**
+ * Somebody has to actually take the next slice.
+ *
+ * ## The bug this was written after
+ *
+ * Everything above was green while the roster went half-swept for days. The
+ * arithmetic was right and the resume query was right; nothing *called* them
+ * a second time. n8n is documented to re-POST with `resume_sync_run_id`, but
+ * Vercel Cron fires a GET and throws the response away — so on a roster of
+ * eight with a cap of five, every night swept STM-001 to STM-005 and stopped.
+ *
+ * The run then stayed `processing`, which the partial unique index treats as a
+ * sweep in flight, so the next tick was refused until the twenty-minute
+ * reclaim; and because pending is per-run, the run after that started at the
+ * top of the roster again. STM-006, STM-007 and STM-008 were unreachable by
+ * *any* run, and read "Synced never" with no error anywhere to explain it.
+ *
+ * The `converges` test above is exactly this loop written by hand in a test —
+ * which is why it proved nothing about production. These pin the driver's own
+ * two rules instead: keep going while time allows, and stop if a slice makes
+ * no progress.
+ */
+describe("the driver that advances a run", () => {
+  /**
+   * The cron's loop, in the same shape as `slice()` models the sweep's.
+   *
+   * `skipped` are streamers that open no child run — one skipped for token
+   * health returns before the posts sync, and pending is derived from child
+   * runs, so it stays pending for ever.
+   */
+  function drive(params: {
+    roster: number;
+    cap: number;
+    skipped?: number;
+    budgetSlices?: number;
+  }) {
+    const { roster, cap, skipped = 0, budgetSlices = 10 } = params;
+
+    // Which streamers have opened a child run. The skipped ones are the lowest
+    // indices, because pending is ordered by streamer code and that is the
+    // worst arrangement for the guard: they are re-taken by every slice.
+    const attempted = new Set<number>();
+    let remaining = 0;
+    let slices = 0;
+
+    while (slices < budgetSlices) {
+      const pending = Array.from({ length: roster }, (_, index) => index).filter(
+        (index) => !attempted.has(index),
+      );
+      const taken = pending.slice(0, cap);
+      const before = remaining;
+
+      // `remaining` is pending minus this slice's take, decided when the slice
+      // is planned — not re-derived afterwards. A streamer skipped inside the
+      // slice still counts as taken by it.
+      remaining = pending.length - taken.length;
+      slices += 1;
+
+      for (const index of taken) if (index >= skipped) attempted.add(index);
+
+      if (remaining === 0) return { slices, remaining, stalled: false };
+
+      // From the second slice on, no fall in `remaining` means no progress.
+      if (slices > 1 && remaining >= before) return { slices, remaining, stalled: true };
+    }
+
+    return { slices, remaining, stalled: false };
+  }
+
+  it("finishes an eight-streamer roster that one slice cannot hold", () => {
+    // The production case. One slice left three streamers permanently unswept.
+    expect(drive({ roster: 8, cap: 5 })).toEqual({ slices: 2, remaining: 0, stalled: false });
+  });
+
+  it("takes one slice when the roster already fits", () => {
+    expect(drive({ roster: 4, cap: 5 })).toEqual({ slices: 1, remaining: 0, stalled: false });
+  });
+
+  it("stops rather than spinning when a whole slice is skipped", () => {
+    /*
+     * Twelve streamers, and the five that sort first are all skipped for token
+     * health. Each opens no child run, so it is still pending next time — the
+     * slice takes the same five for ever and `remaining` sits at seven.
+     *
+     * Without the guard this revalidates the same five dead tokens against Meta
+     * on every pass until the time budget expires, turning a handful of expired
+     * credentials into a quota-burning loop that also starves the streamers
+     * behind them.
+     */
+    expect(drive({ roster: 12, cap: 5, skipped: 5 })).toEqual({
+      slices: 2,
+      remaining: 7,
+      stalled: true,
+    });
+  });
+
+  it("keeps going when only part of a slice is skipped", () => {
+    // Progress is progress. One dead token must not stop the roster — this is
+    // the live case: eight streamers, one invalid token.
+    expect(drive({ roster: 8, cap: 5, skipped: 1 })).toEqual({
+      slices: 2,
+      remaining: 0,
+      stalled: false,
+    });
+  });
+
+  it("finishes when the skipped streamers all fit in one slice", () => {
+    // `remaining` is decided when the slice is planned, so a skip inside the
+    // last slice does not hold the run open.
+    expect(drive({ roster: 5, cap: 5, skipped: 5 })).toEqual({
+      slices: 1,
+      remaining: 0,
+      stalled: false,
+    });
+  });
+
+  it("leaves the rest pending when the budget runs out, rather than closing", () => {
+    // A roster too big for one night ends part-swept and resumable — not
+    // reported as complete, which is what the old design did.
+    const result = drive({ roster: 40, cap: 5, budgetSlices: 3 });
+
+    expect(result.remaining).toBe(25);
+    expect(result.stalled).toBe(false);
+  });
+});

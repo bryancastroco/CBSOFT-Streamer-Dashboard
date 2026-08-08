@@ -39,6 +39,17 @@ const BACKFILL_WINDOW_MS = 270_000;
 const MIN_BACKFILL_MS = 20_000;
 
 /**
+ * Below this, do not start another sweep slice.
+ *
+ * A slice of five streamers takes about two minutes against a live roster, so
+ * this is not enough time to guarantee one finishes — it is enough that trying
+ * is worthwhile. Being killed mid-slice is survivable: the run stays open,
+ * `reclaimAbandonedSweeps` closes it, and the work already committed is durable
+ * per streamer. Starting a slice with ten seconds left is not.
+ */
+const MIN_SLICE_MS = 60_000;
+
+/**
  * GET /api/cron/daily-sync
  *
  * The scheduled sweep, triggered by Vercel Cron.
@@ -199,7 +210,62 @@ export async function GET(request: Request) {
     const startedAt = Date.now();
 
     try {
-      const result = await runSyncAll({ syncRunId });
+      let result = await runSyncAll({ syncRunId });
+
+      /*
+       * ---- Advance the same run until the roster is finished ----------------
+       *
+       * ## The bug this closes
+       *
+       * A slice covers `MAX_STREAMERS_PER_SYNC` streamers (5) and hands back a
+       * cursor. Nothing here picked it up. n8n is documented to re-POST with
+       * `resume_sync_run_id`, but Vercel Cron fires a GET and discards the
+       * response, so on a roster of eight the sweep did the first five, left
+       * the run `processing`, and stopped.
+       *
+       * That is worse than truncation. The partial unique index admits one
+       * active top-level run, so the next tick was refused outright until
+       * `reclaimAbandonedSweeps` marked the run cancelled twenty minutes later
+       * — and the run after that started from the top of the roster again,
+       * because pending is per-run. The streamers sorting last by code were
+       * therefore never reachable *by any run*: STM-006, STM-007 and STM-008
+       * read "Synced never" for as long as the roster stayed above five.
+       *
+       * Nothing about it looked broken. Every run reported
+       * `completed_with_errors` with real counts against the streamers it did
+       * reach, and the three it never touched simply had no rows to be missing
+       * from.
+       *
+       * The loop stops on the same budget as the drain below, so a roster too
+       * large for one invocation still ends the night part-swept rather than
+       * killed mid-slice — but it now resumes from where it stopped, because
+       * the run stays open and pending is computed from child runs.
+       */
+      while (!result.finished && BACKFILL_WINDOW_MS - (Date.now() - startedAt) >= MIN_SLICE_MS) {
+        const before = result.remaining;
+
+        result = await runSyncAll({ syncRunId });
+
+        /*
+         * Stall guard.
+         *
+         * A streamer skipped for token health returns before opening a child
+         * run, and pending is derived from child runs — so it stays pending and
+         * the next slice picks it up again. When every streamer in a slice is
+         * skipped, `remaining` does not move and this would spin, revalidating
+         * the same dead tokens against Meta until the budget ran out.
+         */
+        if (result.remaining >= before) {
+          log.warn("cron.sweep_stalled", { syncRunId, remaining: result.remaining });
+          break;
+        }
+      }
+
+      if (!result.finished) {
+        // Not an error: the budget is doing its job. Logged because a run that
+        // reports this every night means the roster has outgrown one window.
+        log.info("cron.sweep_unfinished", { syncRunId, remaining: result.remaining });
+      }
 
       /*
        * ---- Then drain the backlog with whatever time is left ---------------

@@ -132,11 +132,27 @@ export async function upsertVideos(params: {
    */
   const facebookIds = params.videos.map((video) => video.facebookVideoId);
 
+  /*
+   * `inArray`, not `= any(${facebookIds}::text[])`.
+   *
+   * Interpolating a JavaScript array into a `sql` template does not produce one
+   * array-typed bind parameter. Drizzle expands it to a comma-separated list of
+   * placeholders, so `any(${ids}::text[])` reached Postgres as
+   * `any(($2, $3, …)::text[])` — a row constructor cast to an array — and every
+   * video sync died on `cannot cast type record to text[]`.
+   *
+   * It failed silently from the outside: the sweep isolates each streamer, so
+   * the run finished `completed_with_errors` with videos at 0 and the dashboard
+   * simply showed no new broadcasts. The same class of mistake as the `at time
+   * zone` outage — interpolation is not substitution.
+   */
+  const objectId = sql`split_part(${posts.facebookPostId}, '_', 2)`;
+
   const twins = await db.execute<{ video_id: string }>(
-    sql`select distinct split_part(${posts.facebookPostId}, '_', 2) as video_id
+    sql`select distinct ${objectId} as video_id
         from ${posts}
         where ${posts.streamerId} = ${params.streamerId}
-          and split_part(${posts.facebookPostId}, '_', 2) = any(${facebookIds}::text[])`,
+          and ${inArray(objectId, facebookIds)}`,
   );
 
   const hasFeedPost = new Set(resultRows<{ video_id: string }>(twins).map((row) => row.video_id));

@@ -158,8 +158,16 @@ function SyncLogTableRow({ run }: { run: SyncLogRow }) {
         ) : (
           <span className="text-muted-foreground">
             Whole roster
+            {/*
+             * "synced", not a bare count. This reads as the size of the roster
+             * otherwise — and it is not: a run in progress has only reached
+             * part of it, and a streamer skipped for token health opens no
+             * child run and so never appears here at all. On an eight-streamer
+             * roster with one bad token this said "4 streamers", which invited
+             * exactly the wrong conclusion about how many streamers exist.
+             */}
             {run.streamerCount > 0
-              ? ` · ${run.streamerCount} streamer${run.streamerCount === 1 ? "" : "s"}`
+              ? ` · ${run.streamerCount} streamer${run.streamerCount === 1 ? "" : "s"} synced`
               : ""}
           </span>
         )}
