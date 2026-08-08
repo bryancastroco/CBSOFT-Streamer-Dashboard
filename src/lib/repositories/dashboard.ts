@@ -7,10 +7,11 @@ import { getDb } from "@/lib/db";
 import { excludeFeedStories, mediaKindClause } from "@/lib/db/content-kind";
 import { displayDayText, displayDay } from "@/lib/db/display-day";
 import { gameClause } from "@/lib/db/game-filter";
-import { tsParam } from "@/lib/db/params";
+import { resultRows, tsParam } from "@/lib/db/params";
 import {
   commentSummaries,
   contentMetricsCurrent,
+  pageMetricsDaily,
   posts,
   streamers,
   videos,
@@ -20,6 +21,7 @@ import {
   scopeIncludesVideos,
   type ContentScope,
 } from "@/lib/filters/period";
+import { toDisplayIsoDate as toIsoDate } from "@/lib/time/zone";
 import type {
   SentimentSlice,
   StreamerTotals,
@@ -524,7 +526,7 @@ export async function listUrgentIssues(
 export async function getStreamerTotals(filters: DashboardFilters): Promise<StreamerTotals[]> {
   const db = getDb();
 
-  const [postRows, videoRows, metricRows] = await Promise.all([
+  const [postRows, videoRows, metricRows, growthRows] = await Promise.all([
     db
       .select({
         streamerId: streamers.id,
@@ -566,6 +568,41 @@ export async function getStreamerTotals(filters: DashboardFilters): Promise<Stre
       .leftJoin(videos, eq(videos.id, contentMetricsCurrent.videoId))
       .where(and(isNull(streamers.deletedAt), ...metricScope(filters)))
       .groupBy(streamers.id, streamers.streamerName, streamers.streamerCode),
+
+    /*
+     * Net follower change: the last known count in the window minus the first.
+     *
+     * `array_agg … filter` rather than min/max, because the smallest follower
+     * count is not the earliest one — a Page that lost followers and recovered
+     * would report growth from its trough. Days Meta did not report are skipped
+     * rather than read as zero, which would show a collapse and a recovery that
+     * never happened.
+     *
+     * No game or content predicate. Followers belong to the Page, so no filter
+     * over content can narrow them, and applying one would produce a figure
+     * that looks filtered and is not.
+     */
+    db.execute<{
+      streamer_id: string;
+      streamer_name: string;
+      streamer_code: string;
+      growth: number | null;
+    }>(sql`
+      select s.id as streamer_id,
+             s.streamer_name,
+             s.streamer_code,
+             (array_agg(d.followers order by d.metric_date desc)
+                filter (where d.followers is not null))[1]
+             - (array_agg(d.followers order by d.metric_date asc)
+                filter (where d.followers is not null))[1] as growth
+        from ${pageMetricsDaily} d
+        join ${streamers} s on s.id = d.streamer_id
+       where s.deleted_at is null
+         ${filters.streamerId ? sql`and d.streamer_id = ${filters.streamerId}` : sql``}
+         ${filters.period.from ? sql`and d.metric_date >= ${toIsoDate(filters.period.from)}::date` : sql``}
+         ${filters.period.to ? sql`and d.metric_date <= ${toIsoDate(filters.period.to)}::date` : sql``}
+       group by s.id, s.streamer_name, s.streamer_code
+    `),
   ]);
 
   const byStreamer = new Map<string, StreamerTotals>();
@@ -578,6 +615,7 @@ export async function getStreamerTotals(filters: DashboardFilters): Promise<Stre
       streamerId: row.streamerId,
       streamerName: row.streamerName,
       streamerCode: row.streamerCode,
+      followerGrowth: 0,
       postCount: 0,
       videoCount: 0,
       livestreamCount: 0,
@@ -606,6 +644,19 @@ export async function getStreamerTotals(filters: DashboardFilters): Promise<Stre
 
   for (const row of metricRows) {
     seat(row).views = row.views;
+  }
+
+  for (const row of resultRows<{
+    streamer_id: string;
+    streamer_name: string;
+    streamer_code: string;
+    growth: number | null;
+  }>(growthRows)) {
+    seat({
+      streamerId: row.streamer_id,
+      streamerName: row.streamer_name,
+      streamerCode: row.streamer_code,
+    }).followerGrowth = Number(row.growth ?? 0);
   }
 
   return [...byStreamer.values()];

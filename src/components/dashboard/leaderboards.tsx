@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LeaderboardMetric, StreamerTotals } from "@/lib/ui/dashboard-shapes";
+import { cn } from "@/lib/utils";
 
 /**
  * Who leads on each metric.
@@ -22,8 +23,28 @@ import type { LeaderboardMetric, StreamerTotals } from "@/lib/ui/dashboard-shape
 
 const numberFormat = new Intl.NumberFormat("en-GB");
 
+type BoardSpec = {
+  metric: LeaderboardMetric;
+  title: string;
+  hint: string;
+  /**
+   * Whether a value below zero is a real answer rather than an absence.
+   *
+   * True only for follower growth. Everything else is a count or a sum that
+   * cannot go negative, so a zero there means "nothing happened" and the row is
+   * better left out than listed on nil.
+   */
+  signed?: boolean;
+};
+
 /** Every board on the dashboard, in reading order. */
-export const LEADERBOARDS: { metric: LeaderboardMetric; title: string; hint: string }[] = [
+export const LEADERBOARDS: BoardSpec[] = [
+  {
+    metric: "followerGrowth",
+    title: "Follower growth",
+    hint: "Net change across the period. Followers belong to the Page, so the game and content filters do not narrow this.",
+    signed: true,
+  },
   { metric: "postCount", title: "Posts", hint: "Posts published in this period." },
   { metric: "videoCount", title: "Videos", hint: "Uploads and reels, excluding broadcasts." },
   { metric: "livestreamCount", title: "Livestreams", hint: "Broadcasts that ended in this period." },
@@ -41,15 +62,10 @@ function Board({
   title,
   hint,
   metric,
+  signed = false,
   totals,
   limit,
-}: {
-  title: string;
-  hint: string;
-  metric: LeaderboardMetric;
-  totals: readonly StreamerTotals[];
-  limit: number;
-}) {
+}: BoardSpec & { totals: readonly StreamerTotals[]; limit: number }) {
   /*
    * Sorted here rather than in SQL. Seven queries each taking their own top few
    * would disagree about who exists — a streamer scoring on views and not on
@@ -57,11 +73,16 @@ function Board({
    * no reader could see.
    */
   const ranked = [...totals]
-    .filter((row) => row[metric] > 0)
+    .filter((row) => (signed ? row[metric] !== 0 : row[metric] > 0))
     .sort((a, b) => b[metric] - a[metric] || a.streamerName.localeCompare(b.streamerName))
     .slice(0, limit);
 
-  const leader = ranked[0]?.[metric] ?? 0;
+  /*
+   * The bar is scaled to the largest *gain*, not the largest magnitude. A Page
+   * that shed two hundred followers is not the leader of a growth board, and
+   * scaling to it would draw the decline as the longest bar on the card.
+   */
+  const leader = Math.max(0, ...ranked.map((row) => row[metric]));
 
   return (
     <Card className="min-w-0">
@@ -88,7 +109,16 @@ function Board({
                     <span className="text-muted-foreground tabular-nums">{index + 1}.</span>{" "}
                     {row.streamerName}
                   </Link>
-                  <span className="shrink-0 font-medium tabular-nums">
+                  <span
+                    className={cn(
+                      "shrink-0 font-medium tabular-nums",
+                      // Only where the sign carries meaning. Colouring a post
+                      // count green would imply a judgement about it.
+                      signed && row[metric] > 0 && "text-success",
+                      signed && row[metric] < 0 && "text-danger",
+                    )}
+                  >
+                    {signed && row[metric] > 0 ? "+" : ""}
                     {numberFormat.format(row[metric])}
                   </span>
                 </div>
@@ -100,7 +130,11 @@ function Board({
                 >
                   <div
                     className="h-full rounded-full bg-[var(--chart-1)]"
-                    style={{ width: `${leader > 0 ? Math.max(4, (row[metric] / leader) * 100) : 0}%` }}
+                    style={{
+                      // A decline draws nothing. There is no honest length for
+                      // it on a bar that starts at the left edge.
+                      width: `${leader > 0 && row[metric] > 0 ? Math.max(4, (row[metric] / leader) * 100) : 0}%`,
+                    }}
                   />
                 </div>
               </li>
@@ -124,14 +158,7 @@ export function StreamerLeaderboards({
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {LEADERBOARDS.map((board) => (
-        <Board
-          key={board.metric}
-          title={board.title}
-          hint={board.hint}
-          metric={board.metric}
-          totals={totals}
-          limit={limit}
-        />
+        <Board key={board.metric} {...board} totals={totals} limit={limit} />
       ))}
     </div>
   );

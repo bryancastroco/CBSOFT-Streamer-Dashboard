@@ -36,6 +36,15 @@ export type StreamerTotals = {
   streamerId: string;
   streamerName: string;
   streamerCode: string;
+  /**
+   * Net followers gained across the window, and the only figure here that can
+   * be negative.
+   *
+   * Followers belong to the Page rather than to any piece of content, so unlike
+   * every other total on this list the game and content filters cannot narrow
+   * it. The board says so.
+   */
+  followerGrowth: number;
   postCount: number;
   videoCount: number;
   livestreamCount: number;

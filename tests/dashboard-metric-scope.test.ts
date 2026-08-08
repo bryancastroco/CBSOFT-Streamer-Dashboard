@@ -207,6 +207,63 @@ describe("streamer totals for the leaderboards", () => {
     expect(rows.filter((row) => row.streamerId === streamerId)).toHaveLength(1);
   });
 
+  it("measures follower growth as last minus first, not max minus min", async () => {
+    /*
+     * A Page that dipped and recovered would report growth from its trough
+     * under min/max. Seeded to fail that way: 100 → 80 → 110 is +10, and a
+     * naive query would call it +30.
+     */
+    for (const [date, followers] of [
+      ["2026-08-01", 100],
+      ["2026-08-02", 80],
+      ["2026-08-03", 110],
+    ] as const) {
+      await client.query(
+        `insert into page_metrics_daily (streamer_id, metric_date, followers)
+         values ($1, $2::date, $3)`,
+        [streamerId, date, followers],
+      );
+    }
+
+    const totals = await forStreamer();
+    expect(totals?.followerGrowth).toBe(10);
+  });
+
+  it("reports a decline as a negative rather than as nothing", async () => {
+    for (const [date, followers] of [
+      ["2026-08-01", 500],
+      ["2026-08-04", 460],
+    ] as const) {
+      await client.query(
+        `insert into page_metrics_daily (streamer_id, metric_date, followers)
+         values ($1, $2::date, $3)`,
+        [streamerId, date, followers],
+      );
+    }
+
+    const totals = await forStreamer();
+    expect(totals?.followerGrowth).toBe(-40);
+  });
+
+  it("skips days Meta did not report rather than reading them as zero", async () => {
+    // A null followers row between two real ones would otherwise show a
+    // collapse and a recovery that never happened.
+    for (const [date, followers] of [
+      ["2026-08-01", 200],
+      ["2026-08-02", null],
+      ["2026-08-03", 240],
+    ] as const) {
+      await client.query(
+        `insert into page_metrics_daily (streamer_id, metric_date, followers)
+         values ($1, $2::date, $3)`,
+        [streamerId, date, followers],
+      );
+    }
+
+    const totals = await forStreamer();
+    expect(totals?.followerGrowth).toBe(40);
+  });
+
   it("gives a streamer with no metrics row a zero rather than dropping them", async () => {
     // Nothing seeds `content_metrics_current`, so views is the field that would
     // expose a merge built on the metrics query rather than on the roster.
